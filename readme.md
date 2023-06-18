@@ -8,13 +8,17 @@ Work-in-progress tool for repairing broken ISOM data in maps. Currently only map
 
 ## Running from the command line
 
-`isom [input] [options]`
+The basic syntax allows for opening a map by dragging it onto the exe or using Open With:  
+`isom [input]`
 
-These options hide the window unless -w is used.
+These additional options hide the window (unless `-w` is used) for automated or batch processing:
 | _Option_      | _Description_                                                                    |
 |---------------|----------------------------------------------------------------------------------|
 | `-s <output>` | Saves the map                                                                    |
-| `-g`          | Forces ISOM generation with -s, regardless of input data                         |
-| `-t`          | Tests the input map by comparing the existing ISOM data with generated ISOM data |
+| `-g`          | Forces ISOM generation when using -s, even if input data passes validation       |
+| `-t`          | Tests the input map by comparing the existing ISOM data with generated ISOM data<br>(this is mostly useful for debugging the program itself)|
 | `-td`         | Input specifies a directory and performs the test on all files within            |
-| `-w`          | Forces window to open (e.g. if you want to save the map but still see it)        |
+| `-w`          | Forces the window to open (e.g. if you want to save the map but still see it)    |
+
+For example, to correct a map's ISOM without the GUI:  
+`isom "a map.scm" -s "fixed map.scm"`
