@@ -49,8 +49,13 @@ s32 scrollY = 0;
 s32 screenWidth = 0;
 s32 screenHeight = 0;
 
+char openFilename[1024] = "";
 char loadedExtension[4] = "";
 
+void openMap(const char* filename);
+void saveMap();
+
+void initMapUI(const char* titlename);
 void redraw(bool scroll);
 void resizeWindow(u32 width, u32 height);
 void setScrollbars();
@@ -80,7 +85,6 @@ bool makeWindow(){
   return true;
 }
 
-
 void setStatusText(const char* message){
   if(hStatus != NULL){
     SetWindowText(hStatus, message);
@@ -97,51 +101,41 @@ void dispError(const char* error){
   }
 }
 
-void openMap(){
+void setOpenFilename(const char* filename){
+  strcpy(openFilename, filename);
+}
+
+
+void openMap(const char* filename){
   char path[260];
-  char title[260];
-  OPENFILENAME ofn = {sizeof(ofn), mainwnd, NULL, "StarCraft Scenario File (*.scm,*.scx,*.chk)\0*.scm;*.scx;*.chk\0All Files\0*.*\0",
-                      NULL, 0, 1, path, sizeof(path), NULL, 0, NULL, NULL, OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR,
-                      0,0, NULL, 0, NULL, NULL};
-  path[0] = 0;
-  size_t result;
-  if(!GetOpenFileName(&ofn)){
-    if(CommDlgExtendedError() != 0){
-      MessageBox(0, "Error opening file.", "Error", 0);
+  u32 name = 0;
+  
+  if(filename == NULL || filename[0] == 0){
+    OPENFILENAME ofn = {sizeof(ofn), mainwnd, NULL, "StarCraft Scenario File (*.scm,*.scx,*.chk)\0*.scm;*.scx;*.chk\0All Files\0*.*\0",
+                        NULL, 0, 1, path, sizeof(path), NULL, 0, NULL, NULL, OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR,
+                        0,0, NULL, 0, NULL, NULL};
+    path[0] = 0;
+    size_t result;
+    if(!GetOpenFileName(&ofn)){
+      if(CommDlgExtendedError() != 0){
+        MessageBox(0, "Error opening file.", "Error", 0);
+      }
+      return;
     }
-    return;
+    
+    name = ofn.nFileOffset;
+    filename = path;
+  }else{
+    for(name = strlen(filename); name > 0 && filename[name-1] != '\\'; name--);
   }
   
-  if(loadMap(path) == false){
+  if(loadMap(filename) == false){
     // could not load
     return;
   }
   initISOMData();
   
-  copyPal(bmiMini.bmiColors);
-  
-  getMapDim(&mapTileWidth, &mapTileHeight);
-  mapPixelWidth = mapTileWidth*32;
-  mapPixelHeight = mapTileHeight*32;
-  
-  miniScale = (mapTileWidth > mapTileHeight) ? mapTileWidth : mapTileHeight;
-  if(miniScale <= 64){
-    miniScale = MINIMAP_64;
-  }else if(miniScale <= 128){
-    miniScale = MINIMAP_128;
-  }else{
-    miniScale = MINIMAP_256;
-  }
-  
-  scrollX = 0;
-  scrollY = 0;
-  setScrollbars();
-  
-  strncpy(loadedExtension, path + ofn.nFileExtension, 4);
-  if(loadedExtension[3] != 0) loadedExtension[0] = 0;
-  
-  sprintf(title, "ISOM - [ %s ]", path + ofn.nFileOffset);
-  SetWindowText(mainwnd, title);
+  initMapUI(filename + name);
 }
 
 
@@ -188,7 +182,40 @@ void saveMap(){
 
 
 
-
+void initMapUI(const char* titlename){
+  char title[260];
+  u32 ext;
+  u32 name;
+  
+  copyPal(bmiMini.bmiColors);
+  
+  getMapDim(&mapTileWidth, &mapTileHeight);
+  mapPixelWidth = mapTileWidth*32;
+  mapPixelHeight = mapTileHeight*32;
+  
+  miniScale = (mapTileWidth > mapTileHeight) ? mapTileWidth : mapTileHeight;
+  if(miniScale <= 64){
+    miniScale = MINIMAP_64;
+  }else if(miniScale <= 128){
+    miniScale = MINIMAP_128;
+  }else{
+    miniScale = MINIMAP_256;
+  }
+  
+  scrollX = 0;
+  scrollY = 0;
+  setScrollbars();
+  
+  ext = strlen(titlename);
+  if(titlename[ext-4] == '.') ext -= 3;
+  for(name = ext; name > 0 && titlename[name-1] != '\\'; name--);
+  
+  strncpy(loadedExtension, titlename + ext, 4);
+  if(loadedExtension[3] != 0) loadedExtension[0] = 0;
+  
+  sprintf(title, "ISOM - [ %s ]", titlename + name);
+  SetWindowText(mainwnd, title);
+}
 
 void redraw(bool scroll){
   if(mapbuf == NULL || screenWidth == 0) return;
@@ -470,6 +497,14 @@ bool initWindow(u32 w, u32 h){
   hdcMap = GetDC(hMap);
   
   ShowWindow(mainwnd, SW_SHOWDEFAULT);
+  
+  if(openFilename[0] != 0){
+    if(getCHK(NULL) == NULL){
+      openMap(openFilename);
+    }else{
+      initMapUI(openFilename);
+    }
+  }
   return true;
 }
 
@@ -506,7 +541,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam){
     case WM_COMMAND:
       switch(LOWORD(wParam)){
        case MENU_F_OPEN:
-        openMap();
+        openMap(NULL);
         return 0;
        case MENU_F_SAVE:
        case MENU_F_SAVE_AS:

@@ -5,3 +5,16 @@ Work-in-progress tool for repairing broken ISOM data in maps. Currently only map
 1. Load a map. If it has valid ISOM data this will verify that and then do nothing.
 2. If the ISOM data did not pass the verification check or is missing, the program will try to find ISOM tiles and generate appropriate data. Currently this can't correct misaligned or broken terrain.
 3. If all of the terrain is valid, the ISOM data will be reconstructed and the map can be saved.
+
+## Running from the command line
+
+`isom [input] [options]`
+
+These options hide the window unless -w is used.
+| _Option_      | _Description_                                                                    |
+|---------------|----------------------------------------------------------------------------------|
+| `-s <output>` | Saves the map                                                                    |
+| `-g`          | Forces ISOM generation with -s, regardless of input data                         |
+| `-t`          | Tests the input map by comparing the existing ISOM data with generated ISOM data |
+| `-td`         | Input specifies a directory and performs the test on all files within            |
+| `-w`          | Forces window to open (e.g. if you want to save the map but still see it)        |

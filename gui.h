@@ -5,6 +5,7 @@
 bool makeWindow();
 void setStatusText(const char* message);
 void dispError(const char* error);
+void setOpenFilename(const char* filename);
 
 
 #define MENU_FILE        0x0000

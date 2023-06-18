@@ -5,15 +5,111 @@
 #include "terrain.h"
 #include "isom.h"
 
+// test mode buffers
+ISOMRect mapIsom[MAX_ISOM_WIDTH*MAX_ISOM_HEIGHT] = {0};
+ISOMRect genIsom[MAX_ISOM_WIDTH*MAX_ISOM_HEIGHT] = {0};
 
 void testMaps();
 bool compareGen(const char* file, FILE* log);
 
 int main(int argc, char *argv[]){
+  u32 openArg = 0;
+  u32 saveArg = 0;
+  bool testArg = false;
+  bool testDir = false;
+  bool forceGen = false;
+  bool forceWindow = false;
+  
+  // parse command line options
+  if(argc > 1){
+    int i;
+    for(i = 1; i < argc; i++){
+      if(argv[i][0] != '-'){
+        openArg = i;
+      }else{
+        switch(argv[i][1]){
+          case 'i':
+            i++;
+            openArg = i;
+            break;
+          case 'o':
+          case 's':
+            i++;
+            saveArg = i;
+            break;
+          case 'g':
+            forceGen = true;
+            break;
+          case 'w':
+            forceWindow = true;
+            break;
+          case 't':
+            if(argv[i][2] == 0 || argv[i][2] == 'd'){
+              testArg = true;
+              testDir = (argv[i][2] != 0);
+              break;
+            }
+          default:
+            printf("Unrecognized option \"%s\"\n", argv[i]);
+            return 0;
+        }
+      }
+    }
+  }
+  
   initArchiveData();
   
-  //testMaps();
-  makeWindow();
+  if(openArg > 0){
+    setOpenFilename(argv[openArg]);
+  }
+  
+  if(testArg){
+    if(testDir){
+      testMaps(argv[openArg]);
+      setOpenFilename(argv[openArg]);
+    }else{
+      compareGen(argv[openArg], stdout);
+    }
+  }
+  
+  if(saveArg > 0){
+    if(openArg == 0 || (testArg && getCHK(NULL) == NULL)){
+      puts("Nothing to save.");
+      setOpenFilename(""); // nothing to open either
+    }else{
+      if(testArg == false){
+        if(loadMap(argv[openArg]) == false){
+          puts("Could not load map.");
+          setOpenFilename("");
+          saveArg = 1;
+        }else{
+          if(!forceGen && hasISOMData() && initISOMData()){
+            puts("Source ISOM is valid.");
+            // not an error
+          }else{
+            if(forceGen){
+              clearMapISOM();
+              initISOMData();
+            }
+            if(generateISOMData() == false){
+              puts("ISOM generation failed.");
+              saveArg = 1;
+            }
+          }
+        }
+      }
+      if(saveArg > 1){
+        if(writeMap(argv[saveArg])){
+          puts("File saved successfully!");
+          setOpenFilename(argv[saveArg]);
+        }
+      }
+    }
+  }
+  
+  if((!testArg && saveArg == 0) || forceWindow){
+    makeWindow();
+  }
   
   closeArchiveData();
   unloadCHK();
@@ -23,51 +119,49 @@ int main(int argc, char *argv[]){
 }
 
 
-// scans files in "maps/" and compares default ISOM data to generated ISOM data
-void testMaps(){
+// scans files in path and compares default ISOM data to generated ISOM data
+void testMaps(const char* dirpath){
   FILE* log = fopen("isom test.log", "w");
   if(log == NULL){
     puts("Could not open log file.");
-    system("pause");
     return;
   }
   
-  DIR* dir = opendir("maps");
+  DIR* dir = opendir(dirpath);
   if(dir == NULL){
     puts("Could not open maps folder.");
     fclose(log);
-    system("pause");
     return;
   }
   
   struct dirent* file;
   u32 count = 0;
   u32 pass = 0;
-  char path[260];
+  char path[520];
+  bool useSlash = (dirpath[strlen(dirpath)-1] != '\\');
   
   while ((file = readdir(dir)) != NULL){
     if(file->d_name[0] == '.') continue;
     
     count++;
     fprintf(log, "%-32s-- ", file->d_name);
-    sprintf(path, "title %d -- %s\n", count, file->d_name);
-    system(path);
-    sprintf(path, "maps\\%s", file->d_name);
+    if(useSlash){
+      sprintf(path, "%s\\%s", dirpath, file->d_name);
+    }else{
+      sprintf(path, "%s%s", dirpath, file->d_name);
+    }
     if(compareGen(path, log)) pass++;
     fputc('\n', log);
   }
   closedir(dir);
   
+  setOpenFilename(path);
+  
   sprintf(path, "\n%d of %d passed.\n", pass, count);
   fputs(path, log);
   puts(path);
   fclose(log);
-  
-  system("pause");
 }
-
-ISOMRect mapIsom[MAX_ISOM_WIDTH*MAX_ISOM_HEIGHT] = {0};
-ISOMRect genIsom[MAX_ISOM_WIDTH*MAX_ISOM_HEIGHT] = {0};
 
 // saves default ISOM data then re-generates it and compares the two
 bool compareGen(const char* file, FILE* log){
