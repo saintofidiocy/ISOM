@@ -1,4 +1,5 @@
 #include "chk.h"
+#include "files.h"
 
 u8* chk = NULL;
 u32 chkSize = 0;
@@ -15,21 +16,52 @@ u32 isomSize = 0;
 
 void addCHKSection(u32 section, u32 size, void* data);
 
-void unloadCHK(){
-  if(chk != NULL) free(chk);
-  chk = NULL;
-  chkSize = 0;
-  chkERA = NULL;
-  chkDIM = NULL;
-  chkTILE = NULL;
-  chkMTXM = NULL;
-  chkISOM = NULL;
-  validTILEChunk = false;
-  validMTXMChunk = false;
-  validISOMChunk = false;
-  tileSize = 0;
-  isomSize = 0;
+bool loadMap(const char* path){
+  u32 size = 0;
+  u8* chk = (u8*)readFile(path, &size, FILE_MAP_FILE);
+  
+  if(chk == NULL){
+    dispError("Error opening file.");
+    return false;
+  }
+  if(parseCHK(chk, size) == false){
+    dispError("Error parsing CHK.");
+    free(chk);
+    return false;
+  }
+  if(loadTileset(getMapEra()) == false){
+    dispError("Error loading tileset.");
+    unloadCHK();
+    return false;
+  }
+  
+  return true;
 }
+
+bool writeMap(const char* path){
+  u32 saveMode;
+  u32 ext;
+  
+  if(chk == NULL) return false;
+  
+  ext = strlen(path);
+  if(ext >= 4 && (stricmp(path + ext - 4, ".scm") == 0 || stricmp(path + ext - 4, ".scx") == 0 || stricmp(path + ext - 4, ".mpq") == 0)){
+    puts("mpq file");
+    saveMode = FILE_MAP_FILE;
+  }else{
+    puts("chk file");
+    saveMode = FILE_DISK;
+  }
+  
+  if(writeFile(path, chk, chkSize, saveMode) == false){
+    dispError("Error writing map.");
+    return false;
+  }
+  
+  return true;
+}
+
+
 
 bool parseCHK(u8* data, u32 size){
   CHK* chunk;
@@ -132,6 +164,28 @@ bool parseCHK(u8* data, u32 size){
   return true;
 }
 
+void unloadCHK(){
+  if(chk != NULL) free(chk);
+  chk = NULL;
+  chkSize = 0;
+  chkERA = NULL;
+  chkDIM = NULL;
+  chkTILE = NULL;
+  chkMTXM = NULL;
+  chkISOM = NULL;
+  validTILEChunk = false;
+  validMTXMChunk = false;
+  validISOMChunk = false;
+  tileSize = 0;
+  isomSize = 0;
+}
+
+u8* getCHK(u32* size){
+  if(size != NULL) *size = chkSize;
+  return chk;
+}
+
+
 void setCHKData(u32 section, void* data){
   switch(section){
     case CHK_MTXM:
@@ -159,11 +213,6 @@ void setCHKData(u32 section, void* data){
       puts("Error adding unsupported section");
       return;
   }
-}
-
-u8* getCHK(u32* size){
-  if(size != NULL) *size = chkSize;
-  return chk;
 }
 
 
@@ -207,6 +256,12 @@ void getMapISOM(ISOMRect* buffer){
   }else{
     memset(buffer, 0, isomSize);
   }
+}
+
+void clearMapISOM(){
+  if(chkDIM == NULL || chkISOM == NULL || validISOMChunk == false) return;
+  memset(chkISOM->data, 0, isomSize);
+  validISOMChunk = false;
 }
 
 

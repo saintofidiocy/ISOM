@@ -55,15 +55,15 @@ void redraw(bool scroll);
 void resizeWindow(u32 width, u32 height);
 void setScrollbars();
 
-bool makeWindow(u32 w, u32 h);
+bool initWindow(u32 w, u32 h);
 HWND CreateControl(DWORD dwExStyle, LPCTSTR lpClassName, LPCTSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND mainwnd, int id);
 LRESULT CALLBACK WinProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK ImgProc(HWND, UINT, WPARAM, LPARAM);
 
 
 
-bool initWindow(){
-  if(makeWindow(800,600) == false){
+bool makeWindow(){
+  if(initWindow(800,600) == false){
     printf("Error making window");
     return false;
   }
@@ -82,9 +82,20 @@ bool initWindow(){
 
 
 void setStatusText(const char* message){
-  if(hStatus != NULL) SetWindowText(hStatus, message);
+  if(hStatus != NULL){
+    SetWindowText(hStatus, message);
+  }else{ // console only
+    puts(message);
+  }
 }
 
+void dispError(const char* error){
+  if(mainwnd != NULL){
+    MessageBox(0, error, "Error", 0);
+  }else{ // console only
+    puts(error);
+  }
+}
 
 void openMap(){
   char path[260];
@@ -101,26 +112,13 @@ void openMap(){
     return;
   }
   
-  u32 size = 0;
-  u8* chk = (u8*)readFile(path, &size, FILE_MAP_FILE);
-  
-  if(chk == NULL){
-    MessageBox(0, "Error opening file.", "Error", 0);
+  if(loadMap(path) == false){
+    // could not load
     return;
   }
-  if(parseCHK(chk, size) == false){
-    MessageBox(0, "Error parsing CHK.", "Error", 0);
-    free(chk);
-    return;
-  }
-  if(loadTileset(getMapEra()) == false){
-    MessageBox(0, "Error loading tileset.", "Error", 0);
-    unloadCHK();
-    return;
-  }
-  copyPal(bmiMini.bmiColors);
-  
   initISOMData();
+  
+  copyPal(bmiMini.bmiColors);
   
   getMapDim(&mapTileWidth, &mapTileHeight);
   mapPixelWidth = mapTileWidth*32;
@@ -156,10 +154,7 @@ void saveMap(){
   path[0] = 0;
   size_t result;
   
-  u32 saveMode;
-  u32 size;
-  u8* chk = getCHK(&size);
-  if(chk == NULL) return;
+  if(getCHK(NULL) == NULL) return; // no map loaded
   
   if(generateISOMData() == false){
     MessageBox(0, "Error generating ISOM data.", "Error", 0);
@@ -173,22 +168,14 @@ void saveMap(){
     return;
   }
   
-  if(stricmp(path + ofn.nFileExtension, "scm") == 0 || stricmp(path + ofn.nFileExtension, "scx") == 0 || stricmp(path + ofn.nFileExtension, "mpq") == 0){
-    puts("mpq file");
-    saveMode = FILE_MAP_FILE;
-  }else{
-    puts("chk file");
-    saveMode = FILE_DISK;
-  }
-  
   if(ofn.nFileExtension == 0 && loadedExtension[0] != 0){
     ofn.nFileExtension = strlen(path);
     path[ofn.nFileExtension++] = '.';
     strcpy(path + ofn.nFileExtension, loadedExtension);
   }
   
-  if(writeFile(path, chk, size, saveMode) == false){
-    MessageBox(0, "Error writing map.", "Error", 0);
+  if(writeMap(path) == false){
+    // could not write
     return;
   }
   
@@ -405,7 +392,7 @@ void setScrollbars(){
 
 
 
-bool makeWindow(u32 w, u32 h){
+bool initWindow(u32 w, u32 h){
   int i,j;
   hbrbg = CreateSolidBrush(0);
   RECT border = {0, 0, w, h};
@@ -463,7 +450,6 @@ bool makeWindow(u32 w, u32 h){
   SetMenu(mainwnd, hMenu);
   
   // Menu Accelerators
-  
   akeys[0].fVirt = FCONTROL | FVIRTKEY;
   akeys[0].key = 'O';
   akeys[0].cmd = MENU_F_OPEN;

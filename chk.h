@@ -18,6 +18,8 @@ typedef struct {
   };
 } CHK;
 
+bool loadMap(const char* path);
+bool writeMap(const char* path);
 
 void unloadCHK();
 bool parseCHK(u8* data, u32 size);
@@ -29,6 +31,7 @@ void getMapDim(u32* width, u32* height);
 void getMapTILE(u16* buffer);
 void getMapMTXM(u16* buffer);
 void getMapISOM(ISOMRect* buffer);
+void clearMapISOM();
 bool hasTILEData();
 bool hasMTXMData();
 bool hasISOMData();

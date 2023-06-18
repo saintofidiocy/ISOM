@@ -2,8 +2,9 @@
 #define H_GUI
 #include "types.h"
 
-bool initWindow();
+bool makeWindow();
 void setStatusText(const char* message);
+void dispError(const char* error);
 
 
 #define MENU_FILE        0x0000

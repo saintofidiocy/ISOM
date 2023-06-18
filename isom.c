@@ -70,7 +70,7 @@ const struct {
 // badlands:
 { { 3, {0x1B, 0}},                     // water -> dirt
   { 1, {0x6F,0x0D,0x29,0x53,0x37, 0}}, // dirt  - mud, high dirt, grass, asphalt, rocky ground
-  { 2, {0x29, 0}},                     // high dirt -> high grass
+  { 2, {0x45, 0}},                     // high dirt -> high grass
   { 5, {0x61, 0}},                     // asphalt -> structure
   { 6, {0x37, 0}},                     // rocky ground -> dirt
   0},
@@ -336,7 +336,7 @@ void parseTiles(){
       groups[i] = getCV5Index(maptiles[i]);
       group = groups[i];
       
-      domIndex = i+(mapw+2)+2;
+      domIndex = DomCoords(x,y);
       
       // is null?
       if(cv5[group].id == 0 || ((maptiles[i] & 0xF) != 0 && cv5[maptiles[i] >> 4].tiles[maptiles[i] & 0xF] == 0)){
@@ -388,7 +388,7 @@ void parseTiles(){
       if(y < maph-1){
         /*if(groups[i] == 0 || groups[i+mapw] == 0 || !isValidISOMPair(group, groups[i+mapw], DOWN)){
           tileDoms[domIndex].flags |= TILE_MISMATCH_DOWN;
-          tileDoms[domIndex+mapw].flags |= TILE_MISMATCH_UP;
+          tileDoms[domIndex+mapw+2].flags |= TILE_MISMATCH_UP;
           printf("UD mismatch %3d,%3d : {%2d,%2d,%2d,%2d}, {%2d,%2d,%2d,%2d}\n", group, groups[i+mapw], cv5[group].group.edge.left, cv5[group].group.edge.up, cv5[group].group.edge.right, cv5[group].group.edge.down, cv5[groups[i+mapw]].group.edge.left, cv5[groups[i+mapw]].group.edge.up, cv5[groups[i+mapw]].group.edge.right, cv5[groups[i+mapw]].group.edge.down);
         }*/
       }
@@ -459,7 +459,7 @@ bool validateISOM(u32* cellsChecked, u32* cellsValid){
   for(y = -1; y < maph; y++){
     for(x = -2; x < mapw; x += 2){
       tileIndex = y*mapw + x;
-      domIndex = tileIndex + (mapw+2) + 2;
+      domIndex = DomCoords(x,y);
       
       if(isISOMCellAt(x,y)){
         checkISOM++;
@@ -519,12 +519,12 @@ bool validateISOM(u32* cellsChecked, u32* cellsValid){
           }
           if(y < maph-1){
             if(x >= 0){
-              tileDoms[domIndex+mapw].flags |= TILE_MISMATCHED;
-              tileDoms[domIndex+mapw+1].flags |= TILE_MISMATCHED;
+              tileDoms[domIndex+mapw+2].flags |= TILE_MISMATCHED;
+              tileDoms[domIndex+mapw+2+1].flags |= TILE_MISMATCHED;
             }
             if(x < mapw-2){
-              tileDoms[domIndex+mapw+2].flags |= TILE_MISMATCHED;
-              tileDoms[domIndex+mapw+3].flags |= TILE_MISMATCHED;
+              tileDoms[domIndex+mapw+2+2].flags |= TILE_MISMATCHED;
+              tileDoms[domIndex+mapw+2+3].flags |= TILE_MISMATCHED;
             }
           }
         }
@@ -657,7 +657,7 @@ u32 getISOMTypeAt(s32 x, s32 y){
   
   
   s32 tileIndex = y*mapw + x;
-  s32 domIndex = tileIndex + (mapw+2) + 2;
+  s32 domIndex = DomCoords(x,y);
   //s32 isomIndex = ISOMCoords(x0,y0);
   
   // copy tiles
@@ -670,7 +670,7 @@ u32 getISOMTypeAt(s32 x, s32 y){
     }
     if(y+1 < maph){
       tiles[4+i] = groups[tileIndex+mapw+i];
-      flags[4+i] = tileDoms[domIndex+mapw+i].flags;
+      flags[4+i] = tileDoms[domIndex+mapw+2+i].flags;
     }
   }
   
@@ -780,6 +780,18 @@ bool isISOMPartialEdge(s32 x, s32 y, u32 type, u32 rectSide){
       default:
         return false;
     }
+  }
+  return false;
+}
+
+bool isISOMPartialEdgeSimple(u32 baseType, u32 cmpType){
+  u32 i,j;
+  if(baseType == cmpType) return true;
+  for(i = 0; ISOMBasicEdges[tileset][i].basic != baseType; i++){
+    if(ISOMBasicEdges[tileset][i].basic == 0) return false;
+  }
+  for(j = 0; ISOMBasicEdges[tileset][i].edges[j] != 0; j++){
+    if(cmpType >= ISOMBasicEdges[tileset][i].edges[j] && cmpType <= ISOMBasicEdges[tileset][i].edges[j] + 12) return true;
   }
   return false;
 }

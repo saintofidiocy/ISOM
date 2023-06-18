@@ -36,6 +36,8 @@ bool generateISOMData();
 
 u16 getTileAt(u32 x, u32 y, RGBA* shading);
 
+bool isISOMPartialEdgeSimple(u32 baseType, u32 cmpType);
+
 
 // ISOM edge IDs
 #define ISOM_EDGE_NW       0
