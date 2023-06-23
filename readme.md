@@ -15,8 +15,8 @@ These additional options hide the window (unless `-w` is used) for automated or 
 | _Option_      | _Description_                                                                    |
 |---------------|----------------------------------------------------------------------------------|
 | `-s <output>` | Saves the map                                                                    |
-| `-g`          | Forces ISOM generation when using -s, even if input data passes validation       |
-| `-t`          | Tests the input map by comparing the existing ISOM data with generated ISOM data<br>(this is mostly useful for debugging the program itself)|
+| `-g`          | Forces ISOM generation when using `-s`, even if input data passes validation       |
+| `-t`          | Tests the input map by comparing the existing ISOM data with generated ISOM data<br>(This is mostly useful for debugging the program itself)|
 | `-td`         | Input specifies a directory and performs the test on all files within            |
 | `-w`          | Forces the window to open (e.g. if you want to save the map but still see it)    |
 

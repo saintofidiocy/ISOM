@@ -31,6 +31,11 @@ typedef struct {
   RGBA color;
 } Domain;
 
+typedef struct {
+  u16 id;
+  u16 ISOM;
+} CV5ISOM;
+
 bool initISOMData();
 bool generateISOMData();
 
