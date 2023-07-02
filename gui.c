@@ -49,6 +49,11 @@ s32 scrollY = 0;
 s32 screenWidth = 0;
 s32 screenHeight = 0;
 
+char iniPath[MAX_PATH] = "";
+s32 winWidth = 800;
+s32 winHeight = 600;
+bool winMaximized = false;
+
 char openFilename[1024] = "";
 char loadedExtension[4] = "";
 
@@ -60,7 +65,9 @@ void redraw(bool scroll);
 void resizeWindow(u32 width, u32 height);
 void setScrollbars();
 
-bool initWindow(u32 w, u32 h);
+void loadOptions();
+void saveOptions();
+bool initWindow(u32 w, u32 h, bool maximize);
 HWND CreateControl(DWORD dwExStyle, LPCTSTR lpClassName, LPCTSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND mainwnd, int id);
 LRESULT CALLBACK WinProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK ImgProc(HWND, UINT, WPARAM, LPARAM);
@@ -68,7 +75,8 @@ LRESULT CALLBACK ImgProc(HWND, UINT, WPARAM, LPARAM);
 
 
 bool makeWindow(){
-  if(initWindow(800,600) == false){
+  loadOptions();
+  if(initWindow(winWidth,winHeight,winMaximized) == false){
     printf("Error making window");
     return false;
   }
@@ -417,9 +425,30 @@ void setScrollbars(){
   redraw(true);
 }
 
+void loadOptions(){
+  int i;
+  char exePath[MAX_PATH];
+  GetModuleFileName(NULL, exePath, MAX_PATH);
+  for(i = strlen(exePath); i > 0 && exePath[i] != '\\'; i--);
+  exePath[i] = 0;
+  sprintf(iniPath, "%s\\isom.ini", exePath);
+  
+  winWidth = GetPrivateProfileInt("Window", "Width", winWidth, iniPath);
+  winHeight = GetPrivateProfileInt("Window", "Height", winHeight, iniPath);
+  winMaximized = GetPrivateProfileInt("Window", "Maximized", winMaximized, iniPath);
+}
 
+void saveOptions(){
+  char out[16];
+  sprintf(out, "%d", winWidth);
+  WritePrivateProfileString("Window", "Width", out, iniPath);
+  sprintf(out, "%d", winHeight);
+  WritePrivateProfileString("Window", "Height", out, iniPath);
+  sprintf(out, "%d", winMaximized);
+  WritePrivateProfileString("Window", "Maximized", out, iniPath);
+}
 
-bool initWindow(u32 w, u32 h){
+bool initWindow(u32 w, u32 h, bool maximize){
   int i,j;
   hbrbg = CreateSolidBrush(0);
   RECT border = {0, 0, w, h};
@@ -496,7 +525,7 @@ bool initWindow(u32 w, u32 h){
   hdcMini = GetDC(hMini);
   hdcMap = GetDC(hMap);
   
-  ShowWindow(mainwnd, SW_SHOWDEFAULT);
+  ShowWindow(mainwnd, maximize ? SW_SHOWMAXIMIZED : SW_SHOWDEFAULT);
   
   if(openFilename[0] != 0){
     if(getCHK(NULL) == NULL){
@@ -523,6 +552,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam){
       free(mapbuf);
       mapbuf = NULL;
       mapBufSize = 0;
+      //saveOptions();
       PostQuitMessage(0);
       break;
     //case WM_HSCROLL:
@@ -536,6 +566,13 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam){
       if(wParam != SIZE_MINIMIZED){
         SendMessage(hStatus, WM_SIZE, wParam, lParam);
         resizeWindow(LOWORD(lParam), HIWORD(lParam));
+        if(wParam == SIZE_RESTORED){
+          winWidth = LOWORD(lParam);
+          winHeight = HIWORD(lParam);
+          winMaximized = false;
+        }else if(wParam == SIZE_MAXIMIZED){
+          winMaximized = true;
+        }
       }
       break;
     case WM_COMMAND:

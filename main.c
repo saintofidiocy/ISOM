@@ -151,7 +151,6 @@ void testMaps(const char* dirpath){
       sprintf(path, "%s%s", dirpath, file->d_name);
     }
     if(compareGen(path, log)) pass++;
-    fputc('\n', log);
   }
   closedir(dir);
   
@@ -166,12 +165,12 @@ void testMaps(const char* dirpath){
 // saves default ISOM data then re-generates it and compares the two
 bool compareGen(const char* file, FILE* log){
   if(loadMap(file) == false){
-    fputs("Could not load map.", log);
+    fputs("Could not load map.\n", log);
     return false;
   }
   
   if(hasISOMData() == false || initISOMData() == false){
-    fputs("Source ISOM is invalid.", log);
+    fputs("Source ISOM is invalid.\n", log);
     return false;
   }
   
@@ -181,7 +180,7 @@ bool compareGen(const char* file, FILE* log){
   clearMapISOM();
   initISOMData();
   if(generateISOMData() == false){
-    fputs("ISOM generation failed.", log);
+    fputs("ISOM generation failed.\n", log);
     return false;
   }
   
@@ -192,31 +191,83 @@ bool compareGen(const char* file, FILE* log){
   isomSize = (w/2+1)*(h+1)*sizeof(ISOMRect);
   u32 x,y,i;
   bool match = true;
+  u32 defaultTerrain = 0;
   
-  i = 0;
-  for(y = 0; match && y <= h; y++){
-    for(x = 0; match && x <= w; x++){
-      if(memcmp(&(mapIsom[i]), &(genIsom[i]), sizeof(ISOMRect)) != 0){
-        if(mapIsom[i].left.dir == 0 && mapIsom[i].left.type != genIsom[i].left.type) match = false;
-        if(mapIsom[i].up.dir == 0 && mapIsom[i].up.type != genIsom[i].up.type) match = false;
-        if(mapIsom[i].right.dir == 0 && mapIsom[i].right.type != genIsom[i].right.type) match = false;
-        if(mapIsom[i].down.dir == 0 && mapIsom[i].down.type != genIsom[i].down.type) match = false;
-        if(x == 0 || y == 0 || x >= (w-1) || y >= (h-1)){
-          if(isISOMPartialEdgeSimple(genIsom[i].left.type, mapIsom[i].left.type) == false ||
-             isISOMPartialEdgeSimple(genIsom[i].up.type, mapIsom[i].up.type) == false ||
-             isISOMPartialEdgeSimple(genIsom[i].right.type, mapIsom[i].right.type) == false ||
-             isISOMPartialEdgeSimple(genIsom[i].down.type, mapIsom[i].down.type) == false){
-            match = false;
-          }
-        }
+  for(i = 0; i < (w/2+1)*(h+1); i++){
+    if(mapIsom[i].left.dir == 0){
+      if(defaultTerrain == 0){
+        defaultTerrain = mapIsom[i].left.type;
+      }else if(defaultTerrain != mapIsom[i].left.type){
+        printf("inconsistent default terrain type ? l %d != %d\n", defaultTerrain, mapIsom[i].left.type);
+        defaultTerrain = 0;
+        break;
+      }
+    }
+    if(mapIsom[i].up.dir == 0){
+      if(defaultTerrain == 0){
+        defaultTerrain = mapIsom[i].up.type;
+      }else if(defaultTerrain != mapIsom[i].up.type){
+        printf("inconsistent default terrain type ? u %d != %d\n", defaultTerrain, mapIsom[i].up.type);
+        defaultTerrain = 0;
+        break;
+      }
+    }
+    if(mapIsom[i].down.dir == 0){
+      if(defaultTerrain == 0){
+        defaultTerrain = mapIsom[i].down.type;
+      }else if(defaultTerrain != mapIsom[i].down.type){
+        printf("inconsistent default terrain type ? d %d != %d\n", defaultTerrain, mapIsom[i].down.type);
+        defaultTerrain = 0;
+        break;
       }
     }
   }
   
+  i = 0;
+  for(y = 0; match && y <= h; y++){
+    for(x = 0; match && x <= w/2; x++){
+      if(memcmp(&(mapIsom[i]), &(genIsom[i]), sizeof(ISOMRect)) != 0){
+        // lazy checking by copying the unused entries directly from the source
+        if(x == w/2){
+          genIsom[i].right.type = mapIsom[i].right.type;
+          if(y&1){
+            genIsom[i].up.type = mapIsom[i].up.type;
+          }else{
+            genIsom[i].down.type = mapIsom[i].down.type;
+          }
+        }
+        if(y == h){
+          genIsom[i].down.type = mapIsom[i].down.type;
+          if((x&1) == (y&1)){
+            genIsom[i].right.type = mapIsom[i].right.type;
+          }else{
+            genIsom[i].left.type = mapIsom[i].left.type;
+          }
+        }
+        
+        if(mapIsom[i].left.dir == 0 && mapIsom[i].left.type == defaultTerrain && genIsom[i].left.type != defaultTerrain) match = false;
+        if(mapIsom[i].up.dir == 0 && mapIsom[i].up.type == defaultTerrain && genIsom[i].up.type != defaultTerrain) match = false;
+        if(mapIsom[i].right.dir == 0 && mapIsom[i].right.type == defaultTerrain && genIsom[i].right.type != defaultTerrain) match = false;
+        if(mapIsom[i].down.dir == 0 && mapIsom[i].down.type == defaultTerrain && genIsom[i].down.type != defaultTerrain) match = false;
+        if(x == 0){
+          if(isISOMPartialEdgeSimple(genIsom[i].left.type, mapIsom[i].left.type, RIGHT) == false) match = false;
+        }else if(x >= (w/2-1)){
+          if(isISOMPartialEdgeSimple(genIsom[i].right.type, mapIsom[i].right.type, LEFT) == false) match = false;
+        }
+        if(y == 0){
+          if(isISOMPartialEdgeSimple(genIsom[i].up.type, mapIsom[i].up.type, DOWN) == false) match = false;
+        }else if(y >= (h-1)){
+          if(isISOMPartialEdgeSimple(genIsom[i].right.type, mapIsom[i].right.type, UP) == false) match = false;
+        }
+      }
+      i++;
+    }
+  }
+  
   if(match){
-    fputs("Generated ISOM matches.", log);
+    fputs("Generated ISOM matches.\n", log);
   }else{
-    fputs("Generatied ISOM does not match.", log);
+    fputs("Generatied ISOM does not match.\n", log);
   }
   
   return match;

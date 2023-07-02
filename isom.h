@@ -2,6 +2,18 @@
 #define H_ISOM
 #include "types.h"
 
+
+bool initISOMData();
+bool generateISOMData();
+
+u16 getTileAt(u32 x, u32 y, RGBA* shading);
+
+bool isISOMPartialEdgeSimple(u32 baseType, u32 cmpType, u32 rectSide);
+
+// debug thing
+void printPatterns();
+
+
 typedef union {
   struct {
     u16 edited  : 1;  // only used during tile placement in editor?
@@ -36,12 +48,6 @@ typedef struct {
   u16 ISOM;
 } CV5ISOM;
 
-bool initISOMData();
-bool generateISOMData();
-
-u16 getTileAt(u32 x, u32 y, RGBA* shading);
-
-bool isISOMPartialEdgeSimple(u32 baseType, u32 cmpType);
 
 
 // ISOM edge IDs
@@ -59,6 +65,7 @@ bool isISOMPartialEdgeSimple(u32 baseType, u32 cmpType);
 #define ISOM_CORNER_IN_N   11
 #define ISOM_VERTICAL      12
 #define ISOM_HORIZONTAL    13
+#define ISOM_EDGE_COUNT    14
 
 // ISOM grid coordinates
 #define DIR_TOP_LEFT_H   0
@@ -108,14 +115,14 @@ bool isISOMPartialEdgeSimple(u32 baseType, u32 cmpType);
 
 #define DOMAIN_NONE           0xFFFF
 
-#define LEFT  0
-#define UP    1
-#define RIGHT 2
-#define DOWN  3
-#define UP_LEFT 4
-#define UP_RIGHT 5
-#define DOWN_LEFT 6
-#define DOWN_RIGHT 7
+#define LEFT        0
+#define UP          1
+#define RIGHT       2
+#define DOWN        3
+#define UP_LEFT     4
+#define UP_RIGHT    5
+#define DOWN_LEFT   6
+#define DOWN_RIGHT  7
 
 #define CLIFF_NONE  0
 #define CLIFF_LEFT  1
@@ -126,5 +133,92 @@ bool isISOMPartialEdgeSimple(u32 baseType, u32 cmpType);
 #define SHADING_MISALIGNED  COLOR(255,  0,  0,  64)
 #define SHADING_INVALID     COLOR(  0,  0,  0, 128)
 #define SHADING_NO_SHADING  0
+
+
+// Terrain transition types
+#define PATTERN_TYPE_NORMAL   0
+#define PATTERN_TYPE_SIMPLE   1 // similar to normal, but with fewer transition tiles
+#define PATTERN_TYPE_CLIFFS   2
+#define PATTERN_TYPE_STACK    3 // same as cliff, but has tiles to transition directly to a different cliff type
+
+// A = base terrain
+// B = terrain being transitioned to
+// C0,C1,C2,C3 = unique cliff edge values -- for non-cliff types, these evaluate to whatever "A" is
+#define MATCH_A       1
+#define MATCH_B       2
+#define MATCH_C0      4 // Only exist for cliff types
+#define MATCH_C1      8
+#define MATCH_C2     12
+#define MATCH_C3     16
+#define MATCH_A_OR_C0 (MATCH_C0 | MATCH_A)
+#define MATCH_A_OR_C1 (MATCH_C1 | MATCH_A)
+#define MATCH_A_OR_C2 (MATCH_C2 | MATCH_A)
+#define MATCH_A_OR_C3 (MATCH_C3 | MATCH_A)
+
+
+// Quadrant indexes
+#define PATTERN_TOP_LEFT     0
+#define PATTERN_TOP_RIGHT    1
+#define PATTERN_BOT_LEFT     2
+#define PATTERN_BOT_RIGHT    3
+
+
+// Types but as flags
+#define SEL_NORMAL  1
+#define SEL_SIMPLE  2
+#define SEL_CLIFFS  4
+#define SEL_STACK   8
+#define SEL_ALL     0x0F
+#define SEL_DEFAULT 0xF0  // rule applies to any terrain type not yet defined
+
+// Restricts terrain group types for each quadrant
+#define GROUP_BASIC  1
+#define GROUP_EDGE   2
+#define GROUP_STACK  4
+#define GROUP_ANY    (GROUP_BASIC | GROUP_EDGE | GROUP_STACK)
+
+
+// somewhat arbitrarily, the argument order starts with the top left horizontal value and goes clockwise:
+//     1   2
+//  0         3
+//  7         4
+//     6   5
+// (which can't be any more arbitrary than the actual order, but makes it easier to copy the drawings)
+#define PATTERN_EDGES(TL_V,TL_H, TR_H,TR_V, BR_V,BR_H, BL_H,BL_V)  {TL_H,TL_V, TR_H,TR_V, BR_H,BR_V, BL_V,BL_H}
+
+// macro memes
+#define _PAT_DNE(flags) ((((flags)>>4)^(flags))&15)
+#define _PAT_SEL(arg,index,flags) ((((arg)|(((arg)>>4)&(_PAT_DNE(flags))))&(1<<(index)))==(1<<(index)))
+#define _PAT_TILES(a,a0,a1,a2,a3, b,b0,b1,b2,b3, c,c0,c1,c2,c3, d,d0,d1,d2,d3) \
+           {{_PAT_SEL(a,0,a|b|c|d)*(a0) | _PAT_SEL(b,0,a|b|c|d)*(b0) | _PAT_SEL(c,0,a|b|c|d)*(c0) | _PAT_SEL(d,0,a|b|c|d)*(d0),  \
+             _PAT_SEL(a,0,a|b|c|d)*(a1) | _PAT_SEL(b,0,a|b|c|d)*(b1) | _PAT_SEL(c,0,a|b|c|d)*(c1) | _PAT_SEL(d,0,a|b|c|d)*(d1),  \
+             _PAT_SEL(a,0,a|b|c|d)*(a2) | _PAT_SEL(b,0,a|b|c|d)*(b2) | _PAT_SEL(c,0,a|b|c|d)*(c2) | _PAT_SEL(d,0,a|b|c|d)*(d2),  \
+             _PAT_SEL(a,0,a|b|c|d)*(a3) | _PAT_SEL(b,0,a|b|c|d)*(b3) | _PAT_SEL(c,0,a|b|c|d)*(c3) | _PAT_SEL(d,0,a|b|c|d)*(d3)}, \
+            {_PAT_SEL(a,1,a|b|c|d)*(a0) | _PAT_SEL(b,1,a|b|c|d)*(b0) | _PAT_SEL(c,1,a|b|c|d)*(c0) | _PAT_SEL(d,1,a|b|c|d)*(d0),  \
+             _PAT_SEL(a,1,a|b|c|d)*(a1) | _PAT_SEL(b,1,a|b|c|d)*(b1) | _PAT_SEL(c,1,a|b|c|d)*(c1) | _PAT_SEL(d,1,a|b|c|d)*(d1),  \
+             _PAT_SEL(a,1,a|b|c|d)*(a2) | _PAT_SEL(b,1,a|b|c|d)*(b2) | _PAT_SEL(c,1,a|b|c|d)*(c2) | _PAT_SEL(d,1,a|b|c|d)*(d2),  \
+             _PAT_SEL(a,1,a|b|c|d)*(a3) | _PAT_SEL(b,1,a|b|c|d)*(b3) | _PAT_SEL(c,1,a|b|c|d)*(c3) | _PAT_SEL(d,1,a|b|c|d)*(d3)}, \
+            {_PAT_SEL(a,2,a|b|c|d)*(a0) | _PAT_SEL(b,2,a|b|c|d)*(b0) | _PAT_SEL(c,2,a|b|c|d)*(c0) | _PAT_SEL(d,2,a|b|c|d)*(d0),  \
+             _PAT_SEL(a,2,a|b|c|d)*(a1) | _PAT_SEL(b,2,a|b|c|d)*(b1) | _PAT_SEL(c,2,a|b|c|d)*(c1) | _PAT_SEL(d,2,a|b|c|d)*(d1),  \
+             _PAT_SEL(a,2,a|b|c|d)*(a2) | _PAT_SEL(b,2,a|b|c|d)*(b2) | _PAT_SEL(c,2,a|b|c|d)*(c2) | _PAT_SEL(d,2,a|b|c|d)*(d2),  \
+             _PAT_SEL(a,2,a|b|c|d)*(a3) | _PAT_SEL(b,2,a|b|c|d)*(b3) | _PAT_SEL(c,2,a|b|c|d)*(c3) | _PAT_SEL(d,2,a|b|c|d)*(d3)}, \
+            {_PAT_SEL(a,3,a|b|c|d)*(a0) | _PAT_SEL(b,3,a|b|c|d)*(b0) | _PAT_SEL(c,3,a|b|c|d)*(c0) | _PAT_SEL(d,3,a|b|c|d)*(d0),  \
+             _PAT_SEL(a,3,a|b|c|d)*(a1) | _PAT_SEL(b,3,a|b|c|d)*(b1) | _PAT_SEL(c,3,a|b|c|d)*(c1) | _PAT_SEL(d,3,a|b|c|d)*(d1),  \
+             _PAT_SEL(a,3,a|b|c|d)*(a2) | _PAT_SEL(b,3,a|b|c|d)*(b2) | _PAT_SEL(c,3,a|b|c|d)*(c2) | _PAT_SEL(d,3,a|b|c|d)*(d2),  \
+             _PAT_SEL(a,3,a|b|c|d)*(a3) | _PAT_SEL(b,3,a|b|c|d)*(b3) | _PAT_SEL(c,3,a|b|c|d)*(c3) | _PAT_SEL(d,3,a|b|c|d)*(d3)}}
+#define _PAT_TILES_1(a,a0,a1,a2,a3) _PAT_TILES(a,a0,a1,a2,a3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+#define _PAT_TILES_2(a,a0,a1,a2,a3, b,b0,b1,b2,b3) _PAT_TILES(a,a0,a1,a2,a3, b,b0,b1,b2,b3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+#define _PAT_TILES_3(a,a0,a1,a2,a3, b,b0,b1,b2,b3, c,c0,c1,c2,c3) _PAT_TILES(a,a0,a1,a2,a3, b,b0,b1,b2,b3, c,c0,c1,c2,c3, 0, 0, 0, 0, 0)
+#define _PAT_TILES_4(a,a0,a1,a2,a3, b,b0,b1,b2,b3, c,c0,c1,c2,c3, d,d0,d1,d2,d3) _PAT_TILES(a,a0,a1,a2,a3, b,b0,b1,b2,b3, c,c0,c1,c2,c3, d,d0,d1,d2,d3)
+#define _PAT_TILES_SEL(_1,_2,_3,_4,_5,_6,_7,_8,_9,_10,_11,_12,_13,_14,_15,_16,_17,_18,_19,_20,lmao,...) lmao
+
+// macro for rules specifying tile group types allowed in each quadrant
+#define PATTERN_TILES(...) _PAT_TILES_SEL(__VA_ARGS__,_PAT_TILES_4,,,,,_PAT_TILES_3,,,,,_PAT_TILES_2,,,,,_PAT_TILES_1)(__VA_ARGS__)
+
+// specifies a rule for the specified terrain type(s)
+#define PATTERN_TILES_DEF(sel_types, TL, TR, BL, BR) sel_types,TL,TR,BL,BR
+
+// shorter macro specifying the same rule for all terrain types -- equivalent to PATTERN_TILES( PATTERN_TILES_DEF(SEL_ALL, TL, TR, BL, BR) )
+#define PATTERN_TILES_ALL(TL, TR, BL, BR) {{TL,TR,BL,BR},{TL,TR,BL,BR},{TL,TR,BL,BR},{TL,TR,BL,BR}}
 
 #endif

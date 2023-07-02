@@ -5,12 +5,13 @@
 #define ISOMCoords(x,y) ((y)*(mapw/2+1) + (x)/2)
 #define DomCoords(x,y)  (((y)+1)*(mapw+2) + (x)+2)
 
-// Look-Up Tables
-#define EDGE_RSV_START   49  // 49-56 have special meanings
-#define MAX_TABLE_COUNT  49  // 38 is the highest normally used
-#define MAX_CLIFF_COUNT  8   // normally 2
+#define EDGE_RSV_START   48  // 49-56 have special meanings
+#define MAX_TABLE_COUNT  48  // 38 is the highest normally used
 
-// default CV5-->ISOM ID mappings
+
+/* ----- Look-up table stuff ----- */
+
+// default CV5-->ISOM ID mappings, as a list of {CV5 id, ISOM type} pairs
 const CV5ISOM BadlandsISOMTypes[] = {{2,1},{4,9},{3,2},{5,3},{6,4},{7,7},{18,8},{14,5},{15,6},{22,0x6F},{34,0x0D},{35,0x1B},{20,0x29},{21,0x45},{31,0x61},{27,0x53},{28,0x37},0};
 const CV5ISOM PlatformISOMTypes[] = {{2,1},{8,9},{9,10},{3,2},{11,14},{4,11},{7,8},{5,4},{6,12},{10,13},{20,0x18},{17,0x42},{18,0x50},{13,0x88},{14,0x5E},{16,0x34},{21,0x26},{15,0x6C},{19,0x7A},0};
 const CV5ISOM InstallISOMTypes[]  = {{2,1},{3,2},{6,3},{4,4},{5,5},{8,6},{7,7},{12,0x16},{13,0x24},{10,0x32},{11,0x40},{14,0x4E},{15,0x5C},0};
@@ -19,32 +20,117 @@ const CV5ISOM JungleISOMTypes[]   = {{5,3},{2,1},{4,13},{8,4},{15,6},{11,7},{9,5
 // desert, ice, twilight are same as jungle
 const CV5ISOM* CV5ISOMTypes[8] = {BadlandsISOMTypes, PlatformISOMTypes, InstallISOMTypes, AshworldISOMTypes, JungleISOMTypes, JungleISOMTypes, JungleISOMTypes, JungleISOMTypes};
 
-// remaps cliff-specific edge types to the equivalent base terrain type, since ISOM placement ignores them
-u8 EdgeTypes[MAX_TABLE_COUNT] = {0};
+// ISOM edge subtype definitions
+const struct {
+  u16 edges[8];         // cv5 edge values to match for each ISOM subtype
+  u8 tileTypes[4][4];   // group type matching flags (basic/plain tiles, edge/transition tiles, stack cliff types, or any/don't care)
+  u8 tileOrder[4];      // specifies the priority of each quadrant for determining the ISOM ID (since some patterns can include basic types or unrelated tiles)
+} ISOMPatterns[ISOM_EDGE_COUNT] = {
+  { 
+    // Type 0: ISOM_EDGE_NW
+    PATTERN_EDGES(MATCH_A,MATCH_A, MATCH_A,51, 51,51, 51,MATCH_A),
+    PATTERN_TILES_ALL(GROUP_ANY, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE),
+    {PATTERN_BOT_RIGHT, PATTERN_BOT_LEFT, PATTERN_TOP_RIGHT, PATTERN_TOP_LEFT}
+  },{
+    // Type 1: ISOM_EDGE_NE
+    PATTERN_EDGES(49,MATCH_A, MATCH_A,MATCH_A, MATCH_A,49, 49,49),
+    PATTERN_TILES_ALL(GROUP_EDGE, GROUP_ANY, GROUP_EDGE, GROUP_EDGE),
+    {PATTERN_BOT_LEFT, PATTERN_BOT_RIGHT, PATTERN_TOP_LEFT, PATTERN_TOP_RIGHT}
+  },{
+    // Type 2: ISOM_EDGE_SE
+    PATTERN_EDGES(52,52, 52,MATCH_A_OR_C0, MATCH_A_OR_C0,MATCH_A_OR_C0, MATCH_A_OR_C0,52),
+    PATTERN_TILES(
+      PATTERN_TILES_DEF(SEL_CLIFFS|SEL_STACK,  GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE|GROUP_STACK),
+      //PATTERN_TILES_DEF(SEL_STACK,   GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE),
+      PATTERN_TILES_DEF(SEL_DEFAULT, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_ANY)
+    ),
+    {PATTERN_TOP_LEFT, PATTERN_TOP_RIGHT, PATTERN_BOT_LEFT, PATTERN_BOT_RIGHT}
+  },{
+    // Type 3: ISOM_EDGE_SW
+    PATTERN_EDGES(MATCH_A_OR_C1,50, 50,50, 50,MATCH_A_OR_C1, MATCH_A_OR_C1,MATCH_A_OR_C1),
+    PATTERN_TILES(
+      PATTERN_TILES_DEF(SEL_CLIFFS|SEL_STACK,  GROUP_EDGE, GROUP_EDGE, GROUP_EDGE|GROUP_STACK, GROUP_EDGE),
+      //PATTERN_TILES_DEF(SEL_STACK,   GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE),
+      PATTERN_TILES_DEF(SEL_DEFAULT, GROUP_EDGE, GROUP_EDGE, GROUP_ANY, GROUP_EDGE)
+    ),
+    {PATTERN_TOP_RIGHT, PATTERN_TOP_LEFT, PATTERN_BOT_RIGHT, PATTERN_BOT_LEFT}
+  },{
+    // Type 4: ISOM_CORNER_OUT_N
+    PATTERN_EDGES(MATCH_A,MATCH_A, MATCH_A,MATCH_A, MATCH_A,49, 51,MATCH_A),
+    PATTERN_TILES_ALL(GROUP_ANY, GROUP_ANY, GROUP_EDGE, GROUP_EDGE),
+    {PATTERN_BOT_LEFT, PATTERN_BOT_RIGHT, PATTERN_TOP_LEFT, PATTERN_TOP_RIGHT}
+  },{
+    // Type 5: ISOM_CORNER_OUT_E
+    PATTERN_EDGES(54,MATCH_A, MATCH_A,MATCH_A, MATCH_A,MATCH_A, MATCH_A_OR_C3,54),
+    PATTERN_TILES_ALL(GROUP_EDGE, GROUP_ANY, GROUP_EDGE, GROUP_ANY),
+    {PATTERN_TOP_LEFT, PATTERN_BOT_LEFT, PATTERN_TOP_RIGHT, PATTERN_BOT_RIGHT}
+  },{
+    // Type 6: ISOM_CORNER_OUT_S
+    PATTERN_EDGES(MATCH_A_OR_C1,50, 52,MATCH_A_OR_C0, MATCH_A_OR_C0,MATCH_A_OR_C0, MATCH_A_OR_C1,MATCH_A_OR_C1),
+    PATTERN_TILES(
+      PATTERN_TILES_DEF(SEL_CLIFFS|SEL_STACK,  GROUP_EDGE, GROUP_EDGE, GROUP_EDGE|GROUP_STACK, GROUP_EDGE|GROUP_STACK),
+      //PATTERN_TILES_DEF(SEL_STACK,   GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE),
+      PATTERN_TILES_DEF(SEL_DEFAULT, GROUP_EDGE, GROUP_EDGE, GROUP_ANY, GROUP_ANY)
+    ),
+    {PATTERN_TOP_LEFT, PATTERN_TOP_RIGHT, PATTERN_BOT_LEFT, PATTERN_BOT_RIGHT}
+  },{
+    // Type 7: ISOM_CORNER_OUT_W
+    PATTERN_EDGES(MATCH_A,MATCH_A, MATCH_A,53, 53,MATCH_A_OR_C2, MATCH_A,MATCH_A),
+    PATTERN_TILES_ALL(GROUP_ANY, GROUP_EDGE, GROUP_ANY, GROUP_EDGE),
+    {PATTERN_TOP_RIGHT, PATTERN_BOT_RIGHT, PATTERN_TOP_LEFT, PATTERN_BOT_LEFT}
+  },{
+    // Type 8: ISOM_CORNER_IN_E
+    PATTERN_EDGES(MATCH_A_OR_C1,50, 56,56, 56,56, 51,MATCH_A_OR_C1),
+    PATTERN_TILES(
+      PATTERN_TILES_DEF(SEL_SIMPLE,  GROUP_EDGE, GROUP_EDGE|GROUP_BASIC, GROUP_EDGE, GROUP_EDGE|GROUP_BASIC),
+      PATTERN_TILES_DEF(SEL_DEFAULT, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE)
+    ),
+    {PATTERN_TOP_LEFT, PATTERN_BOT_LEFT, PATTERN_TOP_RIGHT, PATTERN_BOT_RIGHT}
+  },{
+    // Type 9: ISOM_CORNER_IN_W
+    PATTERN_EDGES(55,55, 52,MATCH_A_OR_C0, MATCH_A_OR_C0,49, 55,55),
+    PATTERN_TILES(
+      PATTERN_TILES_DEF(SEL_SIMPLE,  GROUP_EDGE|GROUP_BASIC, GROUP_EDGE, GROUP_EDGE|GROUP_BASIC, GROUP_EDGE),
+      PATTERN_TILES_DEF(SEL_DEFAULT, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE)
+    ),
+    {PATTERN_TOP_RIGHT, PATTERN_BOT_RIGHT, PATTERN_TOP_LEFT, PATTERN_BOT_LEFT}
+  },{
+    // Type 10: ISOM_CORNER_IN_S
+    PATTERN_EDGES(49,MATCH_A, MATCH_A,51, 51,51, 49,49),
+    PATTERN_TILES_ALL(GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE),
+    {PATTERN_BOT_LEFT, PATTERN_BOT_RIGHT, PATTERN_TOP_LEFT, PATTERN_TOP_RIGHT}
+  },{
+    // Type 11: ISOM_CORNER_IN_N
+    PATTERN_EDGES(52,52, 50,50, 50,MATCH_A_OR_C1, MATCH_A_OR_C0,52),
+    PATTERN_TILES_ALL(GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE),
+    {PATTERN_TOP_LEFT, PATTERN_TOP_RIGHT, PATTERN_BOT_LEFT, PATTERN_BOT_RIGHT}
+  },{
+    // Type 12: ISOM_VERTICAL
+    PATTERN_EDGES(MATCH_A_OR_C1,50, 52,MATCH_A_OR_C0, MATCH_A_OR_C0,49, 51,MATCH_A_OR_C1),
+    PATTERN_TILES_ALL(GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE),
+    {PATTERN_TOP_LEFT, PATTERN_TOP_RIGHT, PATTERN_BOT_LEFT, PATTERN_BOT_RIGHT}
+  },{
+    // Type 13: ISOM_HORIZONTAL
+    PATTERN_EDGES(54,MATCH_A, MATCH_A,53, 53,MATCH_A_OR_C2, MATCH_A_OR_C3,54),
+    PATTERN_TILES_ALL(GROUP_EDGE, GROUP_EDGE, GROUP_EDGE, GROUP_EDGE),
+    {PATTERN_TOP_LEFT, PATTERN_TOP_RIGHT, PATTERN_BOT_LEFT, PATTERN_BOT_RIGHT}
+  }
+};
 
-// maps CV5 ID property to ISOM base types -- edge tiles have additional values added to this type depending on direction and other adjacent tiles
-u8 ISOMTypes[256] = {0};
-
-// maps CV5 edge types to basic ISOM terrain types
-u8 ISOMEdgeTypes[MAX_TABLE_COUNT] = {0};
-
-// Remaps cliff edge types for tile pairing checks
-u8 HorizCliffTypes[MAX_TABLE_COUNT] = {0};
-
-// Edge IDs and group ranges for stacked cliff tiles
+// Terrain data
 struct {
-  u16 lowerID;
-  u16 upperID;
-  u16 firstGroup;
-  u16 lastGroup;
-} StackCliffs[MAX_CLIFF_COUNT] = {0};
-u32 stackCliffCount = 0;
+  u8  groupType;   // basic, edge, stack
+  u8  patternType; // normal, simple, cliff, stackable cliff
+  u8  edgeA;       // plain or source CV5 edge type
+  u8  edgeB;       // final CV5 edge type
+  u8  edgeC[4];    // unique cliff IDs
+  u16 cliffUpper;  // stacked cliffs -- upper cliff CV5 id
+  u16 firstGroup;  // stacked cliffs -- first cv5 group (inclusive)
+  u16 lastGroup;   // stacked cliffs -- last cv5 group (exclusive)
+  u16 ISOMType;
+} TerrainTypes[MAX_TABLE_COUNT] = {0};
 
-// ISOM edge types for edge tiles that can be cut off to look like basic types
-struct {
-  u8 basic;
-  u8 edges[MAX_TABLE_COUNT];
-} ISOMBasicEdges[MAX_TABLE_COUNT] = {0};
+/* ----- End Look-up table stuff ----- */
 
 
 // terrain values
@@ -52,12 +138,16 @@ extern CV5* cv5;
 extern u32 cv5count;
 extern u16 dddata[512][256];
 
+
+// chk data
 u32 tileset = 0;
 s32 mapw = 0;
 s32 maph = 0;
 u16 maptiles[MAX_MAP_DIM*MAX_MAP_DIM] = {0};
 ISOMRect isom[MAX_ISOM_WIDTH*MAX_ISOM_HEIGHT] = {0};
 
+
+// isom parsing data
 u16 groups[MAX_MAP_DIM*MAX_MAP_DIM] = {0};
 u16 edges[MAX_ISOM_WIDTH*MAX_ISOM_HEIGHT*2] = {0};
 
@@ -74,25 +164,22 @@ void generateISOMGrids();
 
 u32 getISOMTypeAt(s32 x, s32 y);
 bool isISOMCellAt(s32 x, s32 y);
+bool isEmptyISOMCellAt(s32 x, s32 y);
 bool doesISOMCellEqualType(s32 x, s32 y, u32 type);
 bool isISOMPartialEdge(s32 x, s32 y, u32 type, u32 rectSide);
 void setISOMCellAt(s32 x, s32 y, u32 type);
 
+//u32 getCustomISOM(s32 x, s32 y);
 bool checkISOMTiles(u16 tiles[], u16 flags[]);
 u32 getRectISOMType(u16 tiles[]);
 
 void generateTypeTables();
-void addBasicEdge(u32 basic, u32 edge);
 
-u16 getStackCliffUpper(u16 id);
+bool edgeMatches(u32 edge, u32 pattern, u32 id);
+bool edgeMatchesType(u16 edge, u32 id);
 u32 getCV5Index(u16 tile);
-u32 getEdgeType(u16 id);
-u32 getISOMType(u16 id);
-u32 getISOMFromEdge(u16 id);
-
+u32 getISOMFromBasicEdge(u16 id);
 bool isBasicGroup(u16 group);
-bool isBasicType(u16 id);
-u32 getCliffType(u16 id);
 
 
 
@@ -233,9 +320,9 @@ u16 getTileAt(u32 x, u32 y, RGBA* shading){
       shading->raw = SHADING_MISALIGNED;
     }else{
       switch(flags & TILE_ISOM_GRID){
-        case 0:
-          shading->raw = COLOR(  0,  0,  0, 32);
-          break;
+        //case 0:
+        //  shading->raw = COLOR(  0,  0,  0, 32);
+        //  break;
         case TILE_ISOM_GRID_0:
           shading->raw = COLOR(0,255,0, 32);
           break;
@@ -249,7 +336,7 @@ u16 getTileAt(u32 x, u32 y, RGBA* shading){
           shading->raw = COLOR(0,0,255,32);
           break;
         case TILE_ISOM_GRID:
-          shading->raw = COLOR(255,255,255, 128);
+          shading->raw = COLOR(255,255,255, 64);
           break;
         default:
           shading->raw = SHADING_NO_SHADING;
@@ -404,7 +491,7 @@ bool validateISOM(u32* cellsChecked, u32* cellsValid){
       tileIndex = y*mapw + x;
       domIndex = DomCoords(x,y);
       
-      if(isISOMCellAt(x,y)){
+      if(isISOMCellAt(x,y) || isEmptyISOMCellAt(x,y)){
         checkISOM++;
         id = getISOMTypeAt(x, y);
         
@@ -446,10 +533,11 @@ bool validateISOM(u32* cellsChecked, u32* cellsValid){
           validISOM++;
         }else{
           j = 0;
-          for(i = 0; i < 36; i++){
-            if(ISOMTypes[i] <= cmpType && ISOMTypes[i] > ISOMTypes[j]) j = i;
+          for(i = 0; i < MAX_TABLE_COUNT; i++){
+            //if(ISOMTypes[i] <= cmpType && ISOMTypes[i] > ISOMTypes[j]) j = i;
+            if(TerrainTypes[i].ISOMType <= cmpType && TerrainTypes[i].ISOMType > TerrainTypes[j].ISOMType) j = i;
           }
-          printf("(%3d,%3d) %03x (actual: %03x): %3d, %3d; %3d, %3d\t\t%03x + %d\n", x,y, id, cmpType, (y<0||x<0)?0: groups[tileIndex], (y<0||x>=mapw-2)?0: groups[tileIndex+2], (y>=maph-1||x<0)?0: groups[tileIndex+mapw], (y>=mapw-1||x>=mapw-2)?0: groups[tileIndex+mapw+2], ISOMTypes[j], cmpType-ISOMTypes[j]);
+          printf("(%3d,%3d) %03x (actual: %03x): %3d, %3d; %3d, %3d\t\t%03x + %d\n", x,y, id, cmpType, (y<0||x<0)?0: groups[tileIndex], (y<0||x>=mapw-2)?0: groups[tileIndex+2], (y>=maph-1||x<0)?0: groups[tileIndex+mapw], (y>=mapw-1||x>=mapw-2)?0: groups[tileIndex+mapw+2], TerrainTypes[j].ISOMType, cmpType-TerrainTypes[j].ISOMType);
           if(y >= 0){
             if(x >= 0){
               tileDoms[domIndex].flags |= TILE_MISMATCHED;
@@ -656,6 +744,43 @@ bool isISOMCellAt(s32 x, s32 y){
   return true;
 }
 
+bool isEmptyISOMCellAt(s32 x, s32 y){
+  s32 isomIndex = ISOMCoords(x,y);
+  u32 isomType = 0;
+  if(y >= 0){
+    if(x >= 0){
+      if(isom[isomIndex].right.dir != 0) return false;
+      if(isom[isomIndex].down.dir != 0) return false;
+      if(isom[isomIndex].right.type != isom[isomIndex].down.type) return false;
+      isomType = isom[isomIndex].right.type;
+    }
+    if(x < mapw-2){
+      if(isom[isomIndex+1].left.dir != 0) return false;
+      if(isom[isomIndex+1].down.dir != 0) return false;
+      if(isom[isomIndex+1].left.type != isom[isomIndex+1].down.type) return false;
+      if(isomType != 0 && isom[isomIndex+1].left.type != isomType) return false;
+      if(isomType == 0) isomType = isom[isomIndex+1].left.type;
+    }
+  }
+  if(y < maph-1){
+    if(x >= 0){
+      if(isom[isomIndex+mapw/2+1].right.dir != 0) return false;
+      if(isom[isomIndex+mapw/2+1].up.dir != 0) return false;
+      if(isom[isomIndex+mapw/2+1].right.type != isom[isomIndex+mapw/2+1].up.type) return false;
+      if(isomType != 0 && isom[isomIndex+mapw/2+1].right.type != isomType) return false;
+      if(isomType == 0) isomType = isom[isomIndex+mapw/2+1].right.type;
+    }
+    if(x < mapw-2){
+      if(isom[isomIndex+mapw/2+2].left.dir != 0) return false;
+      if(isom[isomIndex+mapw/2+2].up.dir != 0) return false;
+      if(isom[isomIndex+mapw/2+2].left.type != isom[isomIndex+mapw/2+2].up.type) return false;
+      if(isomType != 0 && isom[isomIndex+mapw/2+2].left.type != isomType) return false;
+      if(isomType == 0) isomType = isom[isomIndex+mapw/2+2].left.type;
+    }
+  }
+  return true;
+}
+
 bool doesISOMCellEqualType(s32 x, s32 y, u32 type){
   s32 isomIndex = ISOMCoords(x,y);
   if(y >= 0){
@@ -683,58 +808,115 @@ bool doesISOMCellEqualType(s32 x, s32 y, u32 type){
 
 bool isISOMPartialEdge(s32 x, s32 y, u32 type, u32 rectSide){
   u32 i,j;
+  u16 edgeType = 0;
+  u32 patType;
   
-  //printf("partial (%d,%d), %d, %s\n", x,y,type, rectSide?"Right":"Left");
-  
-  for(i = 0; ISOMBasicEdges[i].basic != type; i++){
-    if(ISOMBasicEdges[i].basic == 0) return false;
-  }
-  
-  for(j = 0; ISOMBasicEdges[i].edges[j] != 0; j++){
-    switch(rectSide){
-      case LEFT:
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_CORNER_OUT_W)) return true;
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_CORNER_IN_W)) return true;
-        break;
-      case RIGHT:
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_CORNER_OUT_E)) return true;
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_CORNER_IN_E)) return true;
-        break;
-      case UP:
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_CORNER_OUT_N)) return true;
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_CORNER_IN_N)) return true;
-        break;
-      case DOWN:
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_CORNER_OUT_S)) return true;
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_CORNER_IN_S)) return true;
-        break;
-      case UP_LEFT:
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_EDGE_NW)) return true;
-        break;
-      case UP_RIGHT:
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_EDGE_NE)) return true;
-        break;
-      case DOWN_LEFT:
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_EDGE_SW)) return true;
-        break;
-      case DOWN_RIGHT:
-        if(doesISOMCellEqualType(x, y, ISOMBasicEdges[i].edges[j] + ISOM_EDGE_SE)) return true;
-        break;
-      default:
-        return false;
+  for(i = 0; i < MAX_TABLE_COUNT; i++){
+    if(TerrainTypes[i].groupType == GROUP_BASIC && TerrainTypes[i].ISOMType == type){
+      edgeType = TerrainTypes[i].edgeA;
+      break;
     }
   }
+  if(edgeType == 0) return false;
+  
+  for(i = 0; i < MAX_TABLE_COUNT; i++){
+    if(TerrainTypes[i].groupType <= GROUP_BASIC) continue; // skip basic types
+    patType = TerrainTypes[i].patternType;
+    if(TerrainTypes[i].edgeA != edgeType && (patType != PATTERN_TYPE_SIMPLE || TerrainTypes[i].edgeB != edgeType)) continue; // skip irrelevant edges
+    
+    for(j = 0; j < ISOM_EDGE_COUNT; j++){
+      switch(rectSide){
+        case LEFT:
+          if((ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_LEFT] & GROUP_BASIC) && (ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_LEFT] & GROUP_BASIC)){
+            if(doesISOMCellEqualType(x, y, TerrainTypes[i].ISOMType + j)) return true;
+          }
+          break;
+        case RIGHT:
+          if((ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_RIGHT] & GROUP_BASIC) && (ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_RIGHT] & GROUP_BASIC)){
+            if(doesISOMCellEqualType(x, y, TerrainTypes[i].ISOMType + j)) return true;
+          }
+          break;
+        case UP:
+          if((ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_LEFT] & GROUP_BASIC) && (ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_RIGHT] & GROUP_BASIC)){
+            if(doesISOMCellEqualType(x, y, TerrainTypes[i].ISOMType + j)) return true;
+          }
+          break;
+        case DOWN:
+          if((ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_LEFT] & GROUP_BASIC) && (ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_RIGHT] & GROUP_BASIC)){
+            if(doesISOMCellEqualType(x, y, TerrainTypes[i].ISOMType + j)) return true;
+          }
+          break;
+        case UP_LEFT:
+          if(ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_LEFT] & GROUP_BASIC){
+            if(doesISOMCellEqualType(x, y, TerrainTypes[i].ISOMType + j)) return true;
+          }
+          break;
+        case UP_RIGHT:
+          if(ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_RIGHT] & GROUP_BASIC){
+            if(doesISOMCellEqualType(x, y, TerrainTypes[i].ISOMType + j)) return true;
+          }
+          break;
+        case DOWN_LEFT:
+          if(ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_LEFT] & GROUP_BASIC){
+            if(doesISOMCellEqualType(x, y, TerrainTypes[i].ISOMType + j)) return true;
+          }
+          break;
+        case DOWN_RIGHT:
+          if(ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_RIGHT] & GROUP_BASIC){
+            if(doesISOMCellEqualType(x, y, TerrainTypes[i].ISOMType + j)) return true;
+          }
+          break;
+      }
+    }
+  }
+  
   return false;
 }
 
-bool isISOMPartialEdgeSimple(u32 baseType, u32 cmpType){
+bool isISOMPartialEdgeSimple(u32 baseType, u32 cmpType, u32 rectSide){
   u32 i,j;
+  u16 edgeType = 0;
+  u32 patType;
+  
   if(baseType == cmpType) return true;
-  for(i = 0; ISOMBasicEdges[i].basic != baseType; i++){
-    if(ISOMBasicEdges[i].basic == 0) return false;
+  
+  for(i = 0; i < MAX_TABLE_COUNT; i++){
+    if(TerrainTypes[i].groupType == GROUP_BASIC && TerrainTypes[i].ISOMType == baseType){
+      edgeType = TerrainTypes[i].edgeA;
+      break;
+    }
   }
-  for(j = 0; ISOMBasicEdges[i].edges[j] != 0; j++){
-    if(cmpType >= ISOMBasicEdges[i].edges[j] && cmpType <= ISOMBasicEdges[i].edges[j] + 12) return true;
+  if(edgeType == 0) return false;
+  
+  for(i = 0; i < MAX_TABLE_COUNT; i++){
+    if(TerrainTypes[i].groupType <= GROUP_BASIC) continue; // skip basic types
+    patType = TerrainTypes[i].patternType;
+    if(TerrainTypes[i].edgeA != edgeType && (patType != PATTERN_TYPE_SIMPLE || TerrainTypes[i].edgeB != edgeType)) continue; // skip irrelevant edges
+    
+    for(j = 0; j < ISOM_EDGE_COUNT; j++){
+      switch(rectSide){
+        case LEFT:
+          if((ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_LEFT] & GROUP_BASIC) || (ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_LEFT] & GROUP_BASIC)){
+            if(cmpType == TerrainTypes[i].ISOMType + j) return true;
+          }
+          break;
+        case RIGHT:
+          if((ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_RIGHT] & GROUP_BASIC) || (ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_RIGHT] & GROUP_BASIC)){
+            if(cmpType == TerrainTypes[i].ISOMType + j) return true;
+          }
+          break;
+        case UP:
+          if((ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_LEFT] & GROUP_BASIC) || (ISOMPatterns[j].tileTypes[patType][PATTERN_TOP_RIGHT] & GROUP_BASIC)){
+            if(cmpType == TerrainTypes[i].ISOMType + j) return true;
+          }
+          break;
+        case DOWN:
+          if((ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_LEFT] & GROUP_BASIC) || (ISOMPatterns[j].tileTypes[patType][PATTERN_BOT_RIGHT] & GROUP_BASIC)){
+            if(cmpType == TerrainTypes[i].ISOMType + j) return true;
+          }
+          break;
+      }
+    }
   }
   return false;
 }
@@ -748,21 +930,21 @@ void setISOMCellAt(s32 x, s32 y, u32 type){
       isom[isomIndex].down.dir = DIR_TOP_LEFT_V;
       isom[isomIndex].down.type = type;
     }
-    if(x < mapw-2){
+    if(x < mapw){
       isom[isomIndex+1].left.dir = DIR_TOP_RIGHT_H;
       isom[isomIndex+1].left.type = type;
       isom[isomIndex+1].down.dir = DIR_TOP_RIGHT_V;
       isom[isomIndex+1].down.type = type;
     }
   }
-  if(y < maph-1){
+  if(y < maph){
     if(x >= 0){
       isom[isomIndex+mapw/2+1].right.dir = DIR_BOT_LEFT_H;
       isom[isomIndex+mapw/2+1].right.type = type;
       isom[isomIndex+mapw/2+1].up.dir = DIR_BOT_LEFT_V;
       isom[isomIndex+mapw/2+1].up.type = type;
     }
-    if(x < mapw-2){
+    if(x < mapw){
       isom[isomIndex+mapw/2+2].left.dir = DIR_BOT_RIGHT_H;
       isom[isomIndex+mapw/2+2].left.type = type;
       isom[isomIndex+mapw/2+2].up.dir = DIR_BOT_RIGHT_V;
@@ -822,13 +1004,18 @@ bool checkISOMTiles(u16 tiles[], u16 flags[]){
   return true;
 }
 
+
 u32 getRectISOMType(u16 tiles[]){
   u32 id;
-  u32 i;
+  u32 i,j,k;
   u32 edgeTypes[8];
   
   u32 isomType = 0;
   u32 isomSubtype = 0;
+  u32 patType;
+  u32 typeMask;
+  s32 match;
+  s32 bestMatch = -1;
   
   // are all nonzero tiles the same ID?
   id = 0;
@@ -843,18 +1030,10 @@ u32 getRectISOMType(u16 tiles[]){
   }
   if(id == 0) return 0;
   if(i == 8 && isBasicGroup(id)){ // all nonzero tiles are a basic group
-    return getISOMType(cv5[id].id);
+    return TerrainTypes[cv5[id].id].ISOMType;
   }
   
-  edgeTypes[DIR_TOP_LEFT_V] = getEdgeType(cv5[tiles[0]].group.edge.down);
-  edgeTypes[DIR_BOT_LEFT_V] = getEdgeType(cv5[tiles[4]].group.edge.up);
-  edgeTypes[DIR_TOP_LEFT_H] = getEdgeType(cv5[tiles[0]].group.edge.right);
-  edgeTypes[DIR_TOP_RIGHT_H] = getEdgeType(cv5[tiles[2]].group.edge.left);
-  edgeTypes[DIR_TOP_RIGHT_V] = getEdgeType(cv5[tiles[2]].group.edge.down);
-  edgeTypes[DIR_BOT_RIGHT_V] = getEdgeType(cv5[tiles[6]].group.edge.up);
-  edgeTypes[DIR_BOT_LEFT_H] = getEdgeType(cv5[tiles[4]].group.edge.right);
-  edgeTypes[DIR_BOT_RIGHT_H] = getEdgeType(cv5[tiles[6]].group.edge.left);
-  /*edgeTypes[DIR_TOP_LEFT_V] = cv5[tiles[0]].group.edge.down;
+  edgeTypes[DIR_TOP_LEFT_V] = cv5[tiles[0]].group.edge.down;
   edgeTypes[DIR_BOT_LEFT_V] = cv5[tiles[4]].group.edge.up;
   edgeTypes[DIR_TOP_LEFT_H] = cv5[tiles[0]].group.edge.right;
   edgeTypes[DIR_TOP_RIGHT_H] = cv5[tiles[2]].group.edge.left;
@@ -862,6 +1041,78 @@ u32 getRectISOMType(u16 tiles[]){
   edgeTypes[DIR_BOT_RIGHT_V] = cv5[tiles[6]].group.edge.up;
   edgeTypes[DIR_BOT_LEFT_H] = cv5[tiles[4]].group.edge.right;
   edgeTypes[DIR_BOT_RIGHT_H] = cv5[tiles[6]].group.edge.left;
+  
+  for(i = 0; i < ISOM_EDGE_COUNT; i++){
+    for(j = 0; j < 4; j++){
+      id = cv5[tiles[ISOMPatterns[i].tileOrder[j]*2]].id;
+      if(id == 0 || TerrainTypes[id].groupType == GROUP_BASIC) continue; // not a transition type
+      patType = TerrainTypes[id].patternType;
+      
+      // is top row *only* null and bottom row *only* cliff stacking tiles?
+      if(patType == PATTERN_TYPE_STACK && tiles[0] == 0 && tiles[2] == 0){
+        for(k = 4; k < 8; k+=2){ // use a loop with continues/breaks rather than a massive "if"
+          if(tiles[k] == 0) continue; // null is valid
+          if(TerrainTypes[cv5[tiles[k]].id].groupType != GROUP_STACK) break;
+          if(tiles[k] < TerrainTypes[cv5[tiles[k]].id].firstGroup) break;
+          if(tiles[k] >= TerrainTypes[cv5[tiles[k]].id].lastGroup) break;
+          if(k == 6 && tiles[4] != 0 && cv5[tiles[4]].id != cv5[tiles[6]].id) break; // left and right tiles don't match -- this isn't a valid case
+        }
+        if(k == 8){ // yes -- set id to the upper ID
+          k = tiles[4] ? 4 : 6; // select whichever isn't null
+          id = TerrainTypes[cv5[tiles[k]].id].cliffUpper;
+          //patType = PATTERN_TYPE_CLIFFS;
+        }
+      }
+      
+      // validate tile types
+      for(k = 0; k < 4; k++){
+        if(tiles[k*2] == 0) continue;
+        
+        typeMask = TerrainTypes[cv5[tiles[k*2]].id].groupType;
+        if(typeMask == GROUP_STACK){
+          // if it's not inside the stack range then it's regular cliff tiles
+          if(TerrainTypes[cv5[tiles[k*2]].id].cliffUpper != id || tiles[k*2] < TerrainTypes[cv5[tiles[k*2]].id].firstGroup || tiles[k*2] >= TerrainTypes[cv5[tiles[k*2]].id].lastGroup){
+            typeMask = GROUP_EDGE;
+          }
+        }
+        
+        typeMask &= ISOMPatterns[i].tileTypes[patType][k];
+        if(typeMask == 0) break;
+        if((ISOMPatterns[i].tileTypes[patType][k] & GROUP_BASIC) == 0){ // not basic and not "any"
+          if(typeMask & GROUP_EDGE){
+            // is it the same type of edge?
+            if(cv5[tiles[k*2]].id == id) continue;
+          }
+          if(typeMask & GROUP_STACK){
+            // is it it the correct type of cliff?
+            if(TerrainTypes[cv5[tiles[k*2]].id].cliffUpper == id) continue;
+          }
+          break;
+        }
+      }
+      if(k != 4) continue;
+      
+      
+      match = 0;
+      for(k = 0; k < 8; k++){
+        if(edgeTypes[k] == 0) continue;
+        if(edgeMatches(edgeTypes[k], ISOMPatterns[i].edges[k], id) == false){
+          break;
+        }
+        match++;
+      }
+      if(k != 8) continue;
+      if(match == 8){
+        return TerrainTypes[id].ISOMType + i;
+      }
+      
+      if(match > bestMatch){
+        bestMatch = match;
+        isomType = TerrainTypes[id].ISOMType;
+        isomSubtype = i;
+      }
+    }
+  }
   
   // are all nonzero edges the same ID?
   id = 0;
@@ -872,243 +1123,15 @@ u32 getRectISOMType(u16 tiles[]){
       }else if(edgeTypes[i] != id){
         break;
       }
-      
-      // turn raw edge type into usable edge type
-      edgeTypes[i] = getEdgeType(edgeTypes[i]);
     }
   }
   if(id == 0) return 0; // all edges are 0
-  if(i == 8 && isBasicType(id)){ // all edges are basic types
-    return getISOMFromEdge(id);
-  }*/
-  
-  // undefined values always match
-  if(edgeTypes[DIR_TOP_LEFT_V] == 0) edgeTypes[DIR_TOP_LEFT_V] = edgeTypes[DIR_BOT_LEFT_V];
-  if(edgeTypes[DIR_BOT_LEFT_V] == 0) edgeTypes[DIR_BOT_LEFT_V] = edgeTypes[DIR_TOP_LEFT_V];
-  if(edgeTypes[DIR_TOP_LEFT_H] == 0) edgeTypes[DIR_TOP_LEFT_H] = edgeTypes[DIR_TOP_RIGHT_H];
-  if(edgeTypes[DIR_TOP_RIGHT_H] == 0) edgeTypes[DIR_TOP_RIGHT_H] = edgeTypes[DIR_TOP_LEFT_H];
-  if(edgeTypes[DIR_TOP_RIGHT_V] == 0) edgeTypes[DIR_TOP_RIGHT_V] = edgeTypes[DIR_BOT_RIGHT_V];
-  if(edgeTypes[DIR_BOT_RIGHT_V] == 0) edgeTypes[DIR_BOT_RIGHT_V] = edgeTypes[DIR_TOP_RIGHT_V];
-  if(edgeTypes[DIR_BOT_LEFT_H] == 0) edgeTypes[DIR_BOT_LEFT_H] = edgeTypes[DIR_BOT_RIGHT_H];
-  if(edgeTypes[DIR_BOT_RIGHT_H] == 0) edgeTypes[DIR_BOT_RIGHT_H] = edgeTypes[DIR_BOT_LEFT_H];
-  
-  
-  //printf("(%d,%d,%d,%d) -- L:%d,%d, U:%d,%d, R:%d,%d, D:%d,%d\n", TL, TR, BL, BR, edgeTypes[DIR_TOP_LEFT_V],edgeTypes[DIR_BOT_LEFT_V], edgeTypes[DIR_TOP_LEFT_H],edgeTypes[DIR_TOP_RIGHT_H], edgeTypes[DIR_TOP_RIGHT_V],edgeTypes[DIR_BOT_RIGHT_V], edgeTypes[DIR_BOT_LEFT_H],edgeTypes[DIR_BOT_RIGHT_H]);
-  
-  
-  // clean these up to put similar checks together ?
-  
-  // north west
-  if(edgeTypes[DIR_BOT_LEFT_H] == 51 && edgeTypes[DIR_BOT_RIGHT_H] == 51 && edgeTypes[DIR_TOP_RIGHT_V] == 51 && edgeTypes[DIR_BOT_RIGHT_V] == 51){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V]){
-      isomType = getISOMType(cv5[tiles[6]].id);
-      isomSubtype = ISOM_EDGE_NW;
-    }
-  }
-  if(edgeTypes[DIR_BOT_LEFT_H] == 51 && edgeTypes[DIR_BOT_RIGHT_H] == 51 && edgeTypes[DIR_TOP_RIGHT_V] == 0 && edgeTypes[DIR_BOT_RIGHT_V] == 0){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V]){
-      isomType = getISOMType(cv5[tiles[4]].id);
-      isomSubtype = ISOM_EDGE_NW;
-    }
-  }
-  if(edgeTypes[DIR_BOT_LEFT_H] == 0 && edgeTypes[DIR_BOT_RIGHT_H] == 0 && edgeTypes[DIR_TOP_RIGHT_V] == 51 && edgeTypes[DIR_BOT_RIGHT_V] == 51){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V]){
-      isomType = getISOMType(cv5[tiles[2]].id);
-      isomSubtype = ISOM_EDGE_NW;
-    }
-  }
-  // north east
-  if(edgeTypes[DIR_BOT_LEFT_H] == 49 && edgeTypes[DIR_BOT_RIGHT_H] == 49 && edgeTypes[DIR_TOP_LEFT_V] == 49 && edgeTypes[DIR_BOT_LEFT_V] == 49){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[4]].id);
-      isomSubtype = ISOM_EDGE_NE;
-    }
-  }
-  if(edgeTypes[DIR_BOT_LEFT_H] == 49 && edgeTypes[DIR_BOT_RIGHT_H] == 49 && edgeTypes[DIR_TOP_LEFT_V] == 0 && edgeTypes[DIR_BOT_LEFT_V] == 0){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[6]].id);
-      isomSubtype = ISOM_EDGE_NE;
-    }
-  }
-  if(edgeTypes[DIR_BOT_LEFT_H] == 0 && edgeTypes[DIR_BOT_RIGHT_H] == 0 && edgeTypes[DIR_TOP_LEFT_V] == 49 && edgeTypes[DIR_BOT_LEFT_V] == 49){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_EDGE_NE;
-    }
-  }
-  // south east
-  if(edgeTypes[DIR_TOP_LEFT_H] == 52 && edgeTypes[DIR_TOP_RIGHT_H] == 52 && edgeTypes[DIR_TOP_LEFT_V] == 52 && edgeTypes[DIR_BOT_LEFT_V] == 52){
-    if(edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_EDGE_SE;
-    }
-  }
-  if(edgeTypes[DIR_TOP_LEFT_H] == 0 && edgeTypes[DIR_TOP_RIGHT_H] == 0 && edgeTypes[DIR_TOP_LEFT_V] == 52 && edgeTypes[DIR_BOT_LEFT_V] == 52){
-    if(edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[4]].id);
-      isomSubtype = ISOM_EDGE_SE;
-    }
-  }
-  if(edgeTypes[DIR_TOP_LEFT_H] == 52 && edgeTypes[DIR_TOP_RIGHT_H] == 52 && edgeTypes[DIR_TOP_LEFT_V] == 0 && edgeTypes[DIR_BOT_LEFT_V] == 0){
-    if(edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[2]].id);
-      isomSubtype = ISOM_EDGE_SE;
-    }
-  }
-  if(edgeTypes[DIR_TOP_LEFT_H] == 0 && edgeTypes[DIR_TOP_RIGHT_H] == 0 && edgeTypes[DIR_TOP_LEFT_V] == 0 && edgeTypes[DIR_BOT_LEFT_V] == 0){
-    if(getCliffType(cv5[tiles[6]].group.edge.left) != CLIFF_NONE && getCliffType(cv5[tiles[6]].group.edge.up) != CLIFF_NONE){
-      isomType = getISOMType(getStackCliffUpper(tiles[6]));
-      isomSubtype = ISOM_EDGE_SE;
-    }
-  }
-  // south west
-  if(edgeTypes[DIR_TOP_LEFT_H] == 50 && edgeTypes[DIR_TOP_RIGHT_H] == 50 && edgeTypes[DIR_TOP_RIGHT_V] == 50 && edgeTypes[DIR_BOT_RIGHT_V] == 50){
-    if(edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V]){
-      isomType = getISOMType(cv5[tiles[2]].id);
-      isomSubtype = ISOM_EDGE_SW;
-    }
-  }
-  if(edgeTypes[DIR_TOP_LEFT_H] == 0 && edgeTypes[DIR_TOP_RIGHT_H] == 0 && edgeTypes[DIR_TOP_RIGHT_V] == 50 && edgeTypes[DIR_BOT_RIGHT_V] == 50){
-    if(edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V]){
-      isomType = getISOMType(cv5[tiles[6]].id);
-      isomSubtype = ISOM_EDGE_SW;
-    }
-  }
-  if(edgeTypes[DIR_TOP_LEFT_H] == 50 && edgeTypes[DIR_TOP_RIGHT_H] == 50 && edgeTypes[DIR_TOP_RIGHT_V] == 0 && edgeTypes[DIR_BOT_RIGHT_V] == 0){
-    if(edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_EDGE_SW;
-    }
-  }
-  if(edgeTypes[DIR_TOP_LEFT_H] == 0 && edgeTypes[DIR_TOP_RIGHT_H] == 0 && edgeTypes[DIR_TOP_RIGHT_V] == 0 && edgeTypes[DIR_BOT_RIGHT_V] == 0){
-    if(getCliffType(cv5[tiles[4]].group.edge.right) != CLIFF_NONE && getCliffType(cv5[tiles[4]].group.edge.up) != CLIFF_NONE){
-      isomType = getISOMType(getStackCliffUpper(tiles[4]));
-      isomSubtype = ISOM_EDGE_SW;
-    }
-  }
-  
-  // north outer corner
-  if(edgeTypes[DIR_BOT_LEFT_H] == 51 && edgeTypes[DIR_BOT_RIGHT_H] == 49){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[4]].id);
-      isomSubtype = ISOM_CORNER_OUT_N;
-    }
-  }
-  // east outer corner
-  if(edgeTypes[DIR_TOP_LEFT_V] == 54 && edgeTypes[DIR_BOT_LEFT_V] == 54){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_CORNER_OUT_E;
-    }
-  }
-  // south outer corner
-  if(edgeTypes[DIR_TOP_LEFT_H] == 50 && edgeTypes[DIR_TOP_RIGHT_H] == 52){
-    if(edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_CORNER_OUT_S;
-    }
-  }
-  // west outer corner
-  if(edgeTypes[DIR_TOP_RIGHT_V] == 53 && edgeTypes[DIR_BOT_RIGHT_V] == 53){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V]){
-      isomType = getISOMType(cv5[tiles[2]].id);
-      isomSubtype = ISOM_CORNER_OUT_W;
-    }
-  }
-  
-  // east inner corner
-  if(edgeTypes[DIR_TOP_RIGHT_V] == 56 && edgeTypes[DIR_BOT_RIGHT_V] == 56){
-    if(/*edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] &&*/ edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V]){
-      isomType = getISOMType(cv5[tiles[2]].id);
-      isomSubtype = ISOM_CORNER_IN_E;
-    }
-  }
-  if(edgeTypes[DIR_TOP_LEFT_H] == 50 && edgeTypes[DIR_BOT_LEFT_H] == 51){
-    if(edgeTypes[DIR_BOT_LEFT_V] == edgeTypes[DIR_TOP_LEFT_V] && edgeTypes[DIR_TOP_RIGHT_H] == edgeTypes[DIR_TOP_RIGHT_V] && edgeTypes[DIR_BOT_RIGHT_H] == edgeTypes[DIR_BOT_RIGHT_V] && edgeTypes[DIR_TOP_RIGHT_H] == edgeTypes[DIR_BOT_RIGHT_H]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_CORNER_IN_E;
-    }
-    if(edgeTypes[DIR_BOT_LEFT_V] == edgeTypes[DIR_TOP_LEFT_V] && edgeTypes[DIR_TOP_RIGHT_V] == 0 && edgeTypes[DIR_BOT_RIGHT_V] == 0 && edgeTypes[DIR_TOP_RIGHT_H] == 50 && edgeTypes[DIR_BOT_RIGHT_H] == 51){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_CORNER_IN_E;
-    }
-  }
-  // west inner corner
-  if(edgeTypes[DIR_TOP_LEFT_V] == 55 && edgeTypes[DIR_BOT_LEFT_V] == 55){
-    if(/*edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] &&*/ edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_CORNER_IN_W;
-    }
-  }
-  if(edgeTypes[DIR_TOP_RIGHT_H] == 52 && edgeTypes[DIR_BOT_RIGHT_H] == 49){
-    if(edgeTypes[DIR_BOT_RIGHT_V] == edgeTypes[DIR_TOP_RIGHT_V] && edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_LEFT_V] && edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_LEFT_V] && edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_BOT_LEFT_H]){
-      isomType = getISOMType(cv5[tiles[2]].id);
-      isomSubtype = ISOM_CORNER_IN_W;
-    }
-    if(edgeTypes[DIR_BOT_RIGHT_V] == edgeTypes[DIR_TOP_RIGHT_V] && edgeTypes[DIR_TOP_LEFT_V] == 0 && edgeTypes[DIR_BOT_LEFT_V] == 0 && edgeTypes[DIR_TOP_LEFT_H] == 52 && edgeTypes[DIR_BOT_LEFT_H] == 49){
-      isomType = getISOMType(cv5[tiles[2]].id);
-      isomSubtype = ISOM_CORNER_IN_W;
-    }
-  }
-  // south inner corner
-  if(edgeTypes[DIR_BOT_LEFT_H] == 49 && edgeTypes[DIR_BOT_RIGHT_H] == 51){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[4]].id);
-      isomSubtype = ISOM_CORNER_IN_S;
-    }
-  }
-  if(edgeTypes[DIR_BOT_LEFT_H] == 0 && edgeTypes[DIR_BOT_RIGHT_H] == 0 && edgeTypes[DIR_TOP_LEFT_V] == 49 && edgeTypes[DIR_TOP_RIGHT_V] == 51){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_CORNER_IN_S;
-    }
-  }
-  // north inner corner
-  if(edgeTypes[DIR_TOP_LEFT_H] == 52 && edgeTypes[DIR_TOP_RIGHT_H] == 50){
-    if(edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H] && edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_CORNER_IN_N;
-    }
-  }
-  if(edgeTypes[DIR_TOP_LEFT_H] == 0 && edgeTypes[DIR_TOP_RIGHT_H] == 0 && edgeTypes[DIR_BOT_LEFT_V] == 52 && edgeTypes[DIR_TOP_RIGHT_V] == 50){
-    if(edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H]){
-      isomType = getISOMType(cv5[tiles[4]].id);
-      isomSubtype = ISOM_CORNER_IN_N;
-    }
-  }
-  
-  // top, bottom
-  if(edgeTypes[DIR_TOP_LEFT_H] == 50 && edgeTypes[DIR_TOP_RIGHT_H] == 52 && edgeTypes[DIR_BOT_LEFT_H] == 51 && edgeTypes[DIR_BOT_RIGHT_H] == 49){
-    if(edgeTypes[DIR_TOP_LEFT_V] == edgeTypes[DIR_BOT_LEFT_V] && edgeTypes[DIR_TOP_RIGHT_V] == edgeTypes[DIR_BOT_RIGHT_V]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_VERTICAL;
-    }
-  }
-  // left, right
-  if(edgeTypes[DIR_TOP_LEFT_V] == 54 && edgeTypes[DIR_BOT_LEFT_V] == 54 && edgeTypes[DIR_TOP_RIGHT_V] == 53 && edgeTypes[DIR_BOT_RIGHT_V] == 53){
-    if(edgeTypes[DIR_TOP_LEFT_H] == edgeTypes[DIR_TOP_RIGHT_H] && edgeTypes[DIR_BOT_LEFT_H] == edgeTypes[DIR_BOT_RIGHT_H]){
-      isomType = getISOMType(cv5[tiles[0]].id);
-      isomSubtype = ISOM_HORIZONTAL;
-    }
+  if(i == 8){ // all edges are the same
+    i = getISOMFromBasicEdge(id);
+    if(i != 0) return i;
   }
   
   if(isomType == 0){
-    // are all nonzero edges the same ID?
-    id = 0;
-    for(i = 0; i < 8; i++){
-      if(edgeTypes[i] != 0){
-        if(id == 0){
-          id = edgeTypes[i];
-        }else if(edgeTypes[i] != id){
-          break;
-        }
-      }
-    }
-    if(id == 0) return 0; // all edges are 0
-    if(i == 8 && isBasicType(id)){ // all edges are basic types
-      return getISOMFromEdge(id);
-    }
-    
     printf("\t%03x (%d) egde IDs: %d,%d, %d,%d, %d,%d, %d,%d\n", isomType+isomSubtype, isomSubtype, edgeTypes[DIR_TOP_LEFT_V],edgeTypes[DIR_BOT_LEFT_V],edgeTypes[DIR_TOP_LEFT_H],edgeTypes[DIR_TOP_RIGHT_H],edgeTypes[DIR_TOP_RIGHT_V],edgeTypes[DIR_BOT_RIGHT_V],edgeTypes[DIR_BOT_LEFT_H],edgeTypes[DIR_BOT_RIGHT_H]);
   }
   
@@ -1118,126 +1141,216 @@ u32 getRectISOMType(u16 tiles[]){
 
 
 void generateTypeTables(){
-  memset(EdgeTypes, 0, sizeof(EdgeTypes));
-  memset(ISOMTypes, 0, sizeof(ISOMTypes));
-  memset(ISOMEdgeTypes, 0, sizeof(ISOMEdgeTypes));
-  memset(HorizCliffTypes, 0, sizeof(HorizCliffTypes));
-  memset(StackCliffs, 0, sizeof(StackCliffs));
-  memset(ISOMBasicEdges, 0, sizeof(ISOMBasicEdges));
-  stackCliffCount = 0;
+  u32 i,j,k;
+  u32 id;
   
-  int i,j;
-  u8 EdgeCV5Type[MAX_TABLE_COUNT] = {0}; // temporary look-up table for generating the others
+  u8 typeMask;
+  bool doingStackCliff;
   
-  // pass 1 to get IDs
-  for(i = 2; i < 1024; i += 2){
-    if(cv5[i].id > 1){
-      if(ISOMTypes[cv5[i].id] == 0){
-        for(j = 0; CV5ISOMTypes[tileset][j].id != 0; j++){
-          if(CV5ISOMTypes[tileset][j].id == cv5[i].id){
-            ISOMTypes[cv5[i].id] = CV5ISOMTypes[tileset][j].ISOM;
+  memset(TerrainTypes, 0, sizeof(TerrainTypes));
+  
+  // pass 1: get edge types
+  for(i = 2; i < cv5count; i += 2){
+    id = cv5[i].id;
+    if(id <= 1) continue;
+    
+    if(id >= MAX_TABLE_COUNT){
+      printf("wtf %d\n", id);
+      continue;
+    }
+    
+    for(j = 0; CV5ISOMTypes[tileset][j].id != 0; j++){
+      if(CV5ISOMTypes[tileset][j].id == id){
+        TerrainTypes[id].ISOMType = CV5ISOMTypes[tileset][j].ISOM;
+        break;
+      }
+    }
+    if(CV5ISOMTypes[tileset][j].id == 0){
+      printf("Unrecognized CV5 type %d at index %d\n", id, i);
+      continue;
+    }
+    
+    // basic types
+    if(cv5[i].group.edge.left == cv5[i].group.edge.up && cv5[i].group.edge.left == cv5[i].group.edge.right && cv5[i].group.edge.left == cv5[i].group.edge.down){
+      TerrainTypes[id].groupType = GROUP_BASIC;
+      TerrainTypes[id].edgeA = cv5[i].group.edge.left;
+      continue;
+    }
+    
+    // definitions can be split, most notably stacked cliffs
+    if(TerrainTypes[id].patternType != 0){
+      typeMask = TerrainTypes[id].patternType;
+    }else{
+      typeMask = SEL_ALL;
+    }
+    
+    for( ; i < cv5count && cv5[i].id == id; i += 2){
+      if(cv5[i].group.edge.right == 51 && cv5[i].group.edge.down == 51){
+        if(cv5[i].group.edge.left == cv5[i].group.edge.up){
+          TerrainTypes[id].edgeA = cv5[i].group.edge.left;
+        }else{
+          TerrainTypes[id].edgeA = cv5[i].group.edge.left;
+          TerrainTypes[id].edgeC[1] = cv5[i].group.edge.up;
+          typeMask &= (SEL_CLIFFS | SEL_STACK);
+        }
+      }
+      if(cv5[i].group.edge.left == 51 && cv5[i].group.edge.up == 51){
+        if(cv5[i].group.edge.right == cv5[i].group.edge.down){
+          if(cv5[i].group.edge.right < EDGE_RSV_START) {
+            TerrainTypes[id].edgeB = cv5[i].group.edge.right;
+          }else if(cv5[i].group.edge.right == 55){
+            // can't be simple
+            typeMask &= ~SEL_SIMPLE;
+          }
+        }
+      }
+      if(cv5[i].group.edge.up == 53 && cv5[i].group.edge.right == 50){
+        if(cv5[i].group.edge.left != cv5[i].group.edge.down){
+          TerrainTypes[id].edgeC[2] = cv5[i].group.edge.left;
+          TerrainTypes[id].edgeC[1] = cv5[i].group.edge.down;
+          typeMask &= (SEL_CLIFFS | SEL_STACK);
+        }else{
+          typeMask &= (SEL_NORMAL | SEL_SIMPLE);
+        }
+      }
+      if(cv5[i].group.edge.left == 52 && cv5[i].group.edge.up == 54){
+        if(cv5[i].group.edge.right != cv5[i].group.edge.down){
+          TerrainTypes[id].edgeC[3] = cv5[i].group.edge.right;
+          TerrainTypes[id].edgeC[0] = cv5[i].group.edge.down;
+          typeMask &= (SEL_CLIFFS | SEL_STACK);
+        }else{
+          typeMask &= (SEL_NORMAL | SEL_SIMPLE);
+        }
+      }
+    }
+    
+    // preliminary type
+    TerrainTypes[id].patternType = typeMask;
+    
+    // back up one step
+    i -= 2;
+  }
+  
+  // pass 2: solidify types and get stacked cliff ids
+  for(i = 2; i < cv5count; i += 2){
+    id = cv5[i].id;
+    if(id <= 1) continue;
+    
+    if(TerrainTypes[id].ISOMType == 0) continue; // unknown type
+    if(TerrainTypes[id].groupType == GROUP_BASIC) continue; // basic types don't have anything left to do
+    
+    typeMask = TerrainTypes[id].patternType;
+    
+    doingStackCliff = cv5[i].group.edge.up < EDGE_RSV_START && !edgeMatchesType(cv5[i].group.edge.up, id);
+    
+    for(j = i;  j < cv5count && cv5[j].id == id; j += 2){
+      if(doingStackCliff){
+        if(cv5[j].group.edge.up >= EDGE_RSV_START || edgeMatchesType(cv5[j].group.edge.up, id)){
+          break;
+        }
+      }else{
+        if(cv5[j].group.edge.up < EDGE_RSV_START && !edgeMatchesType(cv5[j].group.edge.up, cv5[j].id)){
+          break;
+        }
+      }
+    }
+    
+    if(doingStackCliff){
+      if(j-i != 16) printf("Invalid stacked cliff range? cv5:%d, %d to %d (%d)\n", id, i, j, j-i);
+      TerrainTypes[id].patternType = PATTERN_TYPE_STACK;
+      TerrainTypes[id].groupType = GROUP_STACK;
+      for(k = 0; k < MAX_TABLE_COUNT; k++){
+        if(TerrainTypes[k].ISOMType != 0){
+          if(TerrainTypes[k].edgeC[0] == cv5[i].group.edge.up || TerrainTypes[k].edgeC[1] == cv5[i].group.edge.up){
+            TerrainTypes[id].cliffUpper = k;
             break;
           }
         }
       }
-      
-      // basic types
-      if(cv5[i].group.edge.left == cv5[i].group.edge.up && cv5[i].group.edge.left == cv5[i].group.edge.right && cv5[i].group.edge.left == cv5[i].group.edge.down){
-        EdgeTypes[cv5[i].group.edge.left] = cv5[i].group.edge.left;
-        HorizCliffTypes[cv5[i].group.edge.left] = cv5[i].group.edge.left;
-        ISOMEdgeTypes[cv5[i].group.edge.left] = ISOMTypes[cv5[i].id];
-        EdgeCV5Type[cv5[i].group.edge.left] = cv5[i].id;
+      TerrainTypes[id].firstGroup = i;
+      TerrainTypes[id].lastGroup = j;
+      printf("cliff thing %d->%d, %d-%d\n", id, TerrainTypes[id].cliffUpper, i, j);
+    }else if(TerrainTypes[id].groupType == 0){ // don't assign a type if it already has one
+      TerrainTypes[id].groupType = GROUP_EDGE;
+      if(typeMask & SEL_CLIFFS){
+        TerrainTypes[id].patternType = PATTERN_TYPE_CLIFFS;
+      }else if(typeMask & SEL_SIMPLE){
+        TerrainTypes[id].patternType = PATTERN_TYPE_SIMPLE;
+      }else if(typeMask & SEL_NORMAL){
+        TerrainTypes[id].patternType = PATTERN_TYPE_NORMAL;
+      }else{
+        printf("Type doesn't exist? cv5:%d\n", id);
+        TerrainTypes[id].patternType = 0;
       }
-      
-      // cliff types
-      if(cv5[i].group.edge.left < EDGE_RSV_START && cv5[i].group.edge.up < EDGE_RSV_START && cv5[i].group.edge.right < EDGE_RSV_START && cv5[i].group.edge.down < EDGE_RSV_START){
-        if(EdgeTypes[cv5[i].group.edge.left] == cv5[i].group.edge.left && cv5[i].group.edge.left == cv5[i].group.edge.down && cv5[i].group.edge.right == cv5[i].group.edge.up){
-          EdgeTypes[cv5[i].group.edge.right] = cv5[i].group.edge.left;
-          HorizCliffTypes[cv5[i].group.edge.right] = cv5[i].group.edge.right - 1;
-          ISOMEdgeTypes[cv5[i].group.edge.right] = ISOMEdgeTypes[cv5[i].group.edge.left];
-          EdgeCV5Type[cv5[i].group.edge.right] = cv5[i].id;
-        }
-        if(EdgeTypes[cv5[i].group.edge.right] == cv5[i].group.edge.right && cv5[i].group.edge.left == cv5[i].group.edge.up && cv5[i].group.edge.right == cv5[i].group.edge.down){
-          EdgeTypes[cv5[i].group.edge.left] = cv5[i].group.edge.right;
-          HorizCliffTypes[cv5[i].group.edge.left] = cv5[i].group.edge.left;
-          ISOMEdgeTypes[cv5[i].group.edge.left] = ISOMEdgeTypes[cv5[i].group.edge.right];
-          EdgeCV5Type[cv5[i].group.edge.left] = cv5[i].id;
-        }
-      }
-      
-      // more cliff stuff
-      if(cv5[i].group.edge.up == 53 && cv5[i].group.edge.right == 50 && cv5[i].group.edge.right != cv5[i].group.edge.down && HorizCliffTypes[cv5[i].group.edge.down] == cv5[i].group.edge.down - 1){
-        EdgeTypes[cv5[i].group.edge.left] = EdgeTypes[cv5[i].group.edge.down];
-        HorizCliffTypes[cv5[i].group.edge.left] = EdgeTypes[cv5[i].group.edge.down];
-        ISOMEdgeTypes[cv5[i].group.edge.left] = ISOMEdgeTypes[cv5[i].group.edge.down];
-        EdgeCV5Type[cv5[i].group.edge.left] = cv5[i].id;
-      }
-      if(cv5[i].group.edge.left == 52 && cv5[i].group.edge.up == 54 && cv5[i].group.edge.right != cv5[i].group.edge.down && HorizCliffTypes[cv5[i].group.edge.down] == cv5[i].group.edge.down){
-        EdgeTypes[cv5[i].group.edge.right] = EdgeTypes[cv5[i].group.edge.down];
-        HorizCliffTypes[cv5[i].group.edge.right] = EdgeTypes[cv5[i].group.edge.down];
-        ISOMEdgeTypes[cv5[i].group.edge.right] = ISOMEdgeTypes[cv5[i].group.edge.down];
-        EdgeCV5Type[cv5[i].group.edge.right] = cv5[i].id;
-      }
-    }
-  }
-  
-  // pass 2 to get stacked cliffs and edges (because they can appear before the actual cliffs themselves)
-  bool doingStackCliff = false;
-  u16 addID = 0;
-  u16 addA = 0;
-  u16 addB = 0;
-  for(i = 2; i < 1024; i += 2){
-    if(doingStackCliff && (cv5[i].id != StackCliffs[stackCliffCount].lowerID || cv5[i].group.edge.up >= EDGE_RSV_START || EdgeTypes[cv5[i].group.edge.up] == HorizCliffTypes[cv5[i].group.edge.up] || EdgeCV5Type[cv5[i].group.edge.up] != StackCliffs[stackCliffCount].upperID)){
-      StackCliffs[stackCliffCount].lastGroup = i;
-      stackCliffCount++;
-      doingStackCliff = false;
-    }
-    if(addID != 0 && addID != cv5[i].id){
-      addBasicEdge(ISOMEdgeTypes[addA], ISOMTypes[addID]);
-      addBasicEdge(ISOMEdgeTypes[addB], ISOMTypes[addID]);
-      addA = 0;
-      addB = 0;
-      addID = 0;
     }
     
-    if(cv5[i].id > 1){
-      if(!doingStackCliff && cv5[i].group.edge.up < EDGE_RSV_START && EdgeTypes[cv5[i].group.edge.up] != HorizCliffTypes[cv5[i].group.edge.up] && EdgeCV5Type[cv5[i].group.edge.up] != cv5[i].id){
-        StackCliffs[stackCliffCount].lowerID = cv5[i].id;
-        StackCliffs[stackCliffCount].upperID = EdgeCV5Type[cv5[i].group.edge.up];
-        StackCliffs[stackCliffCount].firstGroup = i;
-        doingStackCliff = true;
+    i = j-2;
+  }
+  
+  // debug stuff
+  /*for(i = 0; i < MAX_TABLE_COUNT; i++){
+    if(TerrainTypes[i].ISOMType == 0) continue;
+    printf("%2d => 0x%2X -- %2d,%2d %2d,%2d,{%2d,%2d,%2d,%2d}\n", i, TerrainTypes[i].ISOMType, TerrainTypes[i].groupType, TerrainTypes[i].patternType, TerrainTypes[i].edgeA, TerrainTypes[i].edgeB, TerrainTypes[i].edgeC[0], TerrainTypes[i].edgeC[1], TerrainTypes[i].edgeC[2], TerrainTypes[i].edgeC[3]);
+  }*/
+}
+
+
+
+
+bool edgeMatches(u32 edge, u32 pattern, u32 id){
+  // special cases for each pattern type
+  switch(TerrainTypes[id].patternType){
+    case PATTERN_TYPE_SIMPLE:
+      if(pattern == 55 || pattern == 56){
+        pattern = MATCH_B;
       }
-      
-      if((cv5[i].group.edge.left == 51 || cv5[i].group.edge.right == 51) && cv5[i].group.edge.left == cv5[i].group.edge.up && cv5[i].group.edge.right == cv5[i].group.edge.down){
-        if(cv5[i].group.edge.left < EDGE_RSV_START){
-          addA = cv5[i].group.edge.left;
-          addID = cv5[i].id;
-        }
-        if(cv5[i].group.edge.right < EDGE_RSV_START){
-          addB = cv5[i].group.edge.right;
-        }else if(cv5[i].group.edge.right == 55){
-          addB = 0;
-        }
+      // fall through
+    case PATTERN_TYPE_NORMAL:
+      if(pattern < EDGE_RSV_START){
+        // remove cliff IDs
+        pattern &= (MATCH_A | MATCH_B);
       }
-    }
+      break;
+    
+    case PATTERN_TYPE_CLIFFS:
+    case PATTERN_TYPE_STACK:
+      if(pattern < EDGE_RSV_START && pattern >= MATCH_C0){
+        // keep only cliff IDs
+        pattern &= ~(MATCH_A | MATCH_B);
+      }
+      break;
+  }
+  
+  switch(pattern){
+    case MATCH_A:
+      return edge == TerrainTypes[id].edgeA;
+    case MATCH_B:
+      return edge == TerrainTypes[id].edgeB;
+    case MATCH_C0:
+      return edge == TerrainTypes[id].edgeC[0];
+    case MATCH_C1:
+      return edge == TerrainTypes[id].edgeC[1];
+    case MATCH_C2:
+      return edge == TerrainTypes[id].edgeC[2];
+    case MATCH_C3:
+      return edge == TerrainTypes[id].edgeC[3];
+    default:
+      return edge == pattern;
   }
 }
 
-void addBasicEdge(u32 basic, u32 edge){
-  int i,j;
-  if(basic == 0 || edge == 0) return; // nothing to add
-  for(i = 0; ISOMBasicEdges[i].basic != 0; i++){
-    if(ISOMBasicEdges[i].basic == basic){ // basic already exists
-      for(j = 0; ISOMBasicEdges[i].edges[j] != 0; j++){
-        if(ISOMBasicEdges[i].edges[j] == edge) return; // already exists
-      }
-      ISOMBasicEdges[i].edges[j] = edge;
-      return;
-    }
+bool edgeMatchesType(u16 edge, u32 id){
+  if(edge == 0) return false;
+  if(edge >= EDGE_RSV_START) return false;
+  if(TerrainTypes[id].edgeA == edge) return true;
+  if(TerrainTypes[id].edgeB == edge) return true;
+  int i;
+  for(i = 0; i < 4; i++){
+    if(TerrainTypes[id].edgeC[i] == edge) return true;
   }
-  ISOMBasicEdges[i].basic = basic;
-  ISOMBasicEdges[i].edges[0] = edge;
+  return false;
 }
+
 
 
 u32 getCV5Index(u16 tile){
@@ -1259,53 +1372,58 @@ u32 getCV5Index(u16 tile){
   return dddata[cv5[id].doodad.doodadID][y*cv5[id].doodad.width+x];
 }
 
-
-u16 getStackCliffUpper(u16 id){
+u32 getISOMFromBasicEdge(u16 id){
+  if(id == 0 || id >= MAX_TABLE_COUNT || id >= EDGE_RSV_START) return 0;
   int i;
-  for(i = 0; i < stackCliffCount; i++){
-    if(id >= StackCliffs[i].firstGroup && id < StackCliffs[i].lastGroup){
-      return StackCliffs[i].upperID;
-    }
+  for(i = 0; i < MAX_TABLE_COUNT; i++){
+    if(TerrainTypes[i].groupType == GROUP_BASIC && TerrainTypes[i].edgeA == id) return TerrainTypes[i].ISOMType;
   }
-  return cv5[id].id;
-}
-
-u32 getEdgeType(u16 id){
-  if(id >= EDGE_RSV_START) return id;
-  return EdgeTypes[id];
-}
-
-u32 getISOMType(u16 id){
-  if(id >= 36) return 0;
-  return ISOMTypes[id];
-}
-
-u32 getISOMFromEdge(u16 id){
-  if(id >= MAX_TABLE_COUNT) return 0;
-  return ISOMEdgeTypes[id];
+  return 0;
 }
 
 bool isBasicGroup(u16 group){
   if(group >= cv5count) return false;
-  return cv5[group].group.edge.left == cv5[group].group.edge.up && cv5[group].group.edge.left == cv5[group].group.edge.right && cv5[group].group.edge.left == cv5[group].group.edge.down;
+  return TerrainTypes[cv5[group].id].groupType == GROUP_BASIC;
 }
 
 
-bool isBasicType(u16 id){
-  if(id == 0 || id >= MAX_TABLE_COUNT || id >= EDGE_RSV_START) return false;
-  if(id < 8) return true;
-  return getCliffType(id) == CLIFF_NONE;
-}
+// debug stuff
 
-u32 getCliffType(u16 id){
-  if(id == 0 || id >= MAX_TABLE_COUNT) return CLIFF_NONE;
-  if(HorizCliffTypes[id] < 8) return CLIFF_NONE;
-  u16 base = id;
-  if(HorizCliffTypes[base] == base-1) base--;
-  if(HorizCliffTypes[base] == base && HorizCliffTypes[base+1] == base){
-    if(base == id) return CLIFF_LEFT;
-    if(base+1 == id) return CLIFF_RIGHT;
+u32 matchVal(u32 a){
+  switch(a){
+    case MATCH_A_OR_C0: return 0xC0;
+    case MATCH_A_OR_C1: return 0xC1;
+    case MATCH_A_OR_C2: return 0xC2;
+    case MATCH_A_OR_C3: return 0xC3;
+    case MATCH_A:    return 0xA;
+    case MATCH_B:    return 0xB;
+    default:
+      return ((a/10)<<4)|(a%10);
   }
-  return CLIFF_NONE;
 }
+
+void printPatterns(){
+  u32 i,j;
+  
+  char typestrs[4][32] = {"Normal", "Simple", "Cliff", "Stack"};
+  char groupstrs[8][32] = {"None", "Basic", "Edge", "Basic/Edge", "Stack", "Basic/Stack", "Edge/Stack", "Any"};
+  
+  for(i = 0; i < ISOM_EDGE_COUNT; i++){
+    if(ISOMPatterns[i].edges[0] == 0) break;
+    printf("[ Type %d ]\n", i);
+    printf("  %2X %2X\n"
+           "%2X     %2X\n"
+           "%2X     %2X\n"
+           "  %2X %2X\n\n", matchVal(ISOMPatterns[i].edges[DIR_TOP_LEFT_H]),matchVal(ISOMPatterns[i].edges[DIR_TOP_RIGHT_H]),
+                            matchVal(ISOMPatterns[i].edges[DIR_TOP_LEFT_V]),matchVal(ISOMPatterns[i].edges[DIR_TOP_RIGHT_V]),
+                            matchVal(ISOMPatterns[i].edges[DIR_BOT_LEFT_V]),matchVal(ISOMPatterns[i].edges[DIR_BOT_RIGHT_V]),
+                            matchVal(ISOMPatterns[i].edges[DIR_BOT_LEFT_H]),matchVal(ISOMPatterns[i].edges[DIR_BOT_RIGHT_H]));
+    for(j = 0; j < 4; j++){
+      printf("%s Types: {%s, %s, %s, %s}\n", typestrs[j], groupstrs[ISOMPatterns[i].tileTypes[j][0]], groupstrs[ISOMPatterns[i].tileTypes[j][1]], groupstrs[ISOMPatterns[i].tileTypes[j][2]], groupstrs[ISOMPatterns[i].tileTypes[j][3]]);
+    }
+    puts("\n");
+  }
+}
+
+
 
